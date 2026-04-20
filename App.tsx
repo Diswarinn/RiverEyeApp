@@ -1,45 +1,50 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
+import React from 'react';
+import { Text } from 'react-native'; // <-- INI YANG TERLEWAT TADI 🙏
+import { NavigationContainer } from '@react-navigation/native';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
-import { NewAppScreen } from '@react-native/new-app-screen';
-import { StatusBar, StyleSheet, useColorScheme, View } from 'react-native';
-import {
-  SafeAreaProvider,
-  useSafeAreaInsets,
-} from 'react-native-safe-area-context';
+// Import semua halaman dari folder screens
+import DashboardScreen from './src/screens/DashboardScreen';
+import MapScreen from './src/screens/MapScreen';
+import CameraScreen from './src/screens/CameraScreen';
+import HistoryScreen from './src/screens/HistoryScreen';
 
-function App() {
-  const isDarkMode = useColorScheme() === 'dark';
+const Tab = createBottomTabNavigator();
 
+const App = () => {
   return (
-    <SafeAreaProvider>
-      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      <AppContent />
-    </SafeAreaProvider>
+    <NavigationContainer>
+      <Tab.Navigator
+        screenOptions={{
+          tabBarActiveTintColor: '#2ECC71', // Warna hijau saat tab aktif
+          tabBarInactiveTintColor: '#7F8C8D', // Warna abu-abu saat tidak aktif
+          headerShown: false, // Menyembunyikan header bawaan navigasi
+          tabBarStyle: { paddingBottom: 5, height: 60 },
+        }}
+      >
+        <Tab.Screen 
+          name="Beranda" 
+          component={DashboardScreen} 
+          options={{ tabBarIcon: () => <Text style={{fontSize: 20}}>🏠</Text> }}
+        />
+        <Tab.Screen 
+          name="Peta" 
+          component={MapScreen} 
+          options={{ tabBarIcon: () => <Text style={{fontSize: 20}}>🗺️</Text> }}
+        />
+        <Tab.Screen 
+          name="Kamera" 
+          component={CameraScreen} 
+          options={{ tabBarIcon: () => <Text style={{fontSize: 20}}>🎥</Text> }}
+        />
+        <Tab.Screen 
+          name="Riwayat" 
+          component={HistoryScreen} 
+          options={{ tabBarIcon: () => <Text style={{fontSize: 20}}>📊</Text> }}
+        />
+      </Tab.Navigator>
+    </NavigationContainer>
   );
-}
-
-function AppContent() {
-  const safeAreaInsets = useSafeAreaInsets();
-
-  return (
-    <View style={styles.container}>
-      <NewAppScreen
-        templateFileName="App.tsx"
-        safeAreaInsets={safeAreaInsets}
-      />
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-});
+};
 
 export default App;
