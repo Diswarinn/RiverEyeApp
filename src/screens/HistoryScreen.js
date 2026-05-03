@@ -1,7 +1,18 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, RefreshControl, SafeAreaView, StatusBar } from 'react-native';
 import { getLogs, getLocations } from '../config/apiClient';
 import { getRiskFromLevel } from '../config/api';
+
+// Palet warna modern (Slate & Sky UI)
+const COLORS = {
+  background: '#F8FAFC', // Slate 50
+  cardBg: '#FFFFFF',
+  textMain: '#0F172A',   // Slate 900
+  textMuted: '#64748B',  // Slate 500
+  border: '#E2E8F0',     // Slate 200
+  primary: '#0EA5E9',    // Sky 500
+  danger: '#EF4444',     // Red 500
+};
 
 const HistoryScreen = () => {
   const [historyData, setHistoryData] = useState([]);
@@ -14,13 +25,11 @@ const HistoryScreen = () => {
     setLoading(true);
     setError(null);
     try {
-      // Ambil logs dan lokasi secara paralel
       const [logsData, locationsData] = await Promise.all([
         getLogs(),
         getLocations(),
       ]);
 
-      // Buat map lokasi untuk lookup cepat: { id: name }
       const locMap = {};
       if (locationsData) {
         locationsData.forEach((loc) => {
@@ -29,7 +38,6 @@ const HistoryScreen = () => {
       }
       setLocations(locMap);
 
-      // Sort logs berdasarkan waktu terbaru
       if (logsData && logsData.length > 0) {
         const sorted = [...logsData].sort(
           (a, b) => new Date(b.timestamp) - new Date(a.timestamp),
@@ -45,21 +53,16 @@ const HistoryScreen = () => {
     }
   }, []);
 
-  // useEffect akan otomatis menjalankan fungsi fetch saat halaman dibuka
   useEffect(() => {
     fetchHistoryData();
   }, [fetchHistoryData]);
 
-  // Tentukan status berdasarkan water_level_cm (menggunakan fungsi terpusat dari api.js)
-
-  // Pull-to-refresh handler
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await fetchHistoryData();
     setRefreshing(false);
   }, [fetchHistoryData]);
 
-  // Desain untuk setiap baris data
   const renderItem = ({ item }) => {
     const status = getRiskFromLevel(item.water_level_cm);
     const locationName = locations[item.location_id] || `Lokasi #${item.location_id}`;
@@ -74,93 +77,256 @@ const HistoryScreen = () => {
     return (
       <View style={styles.card}>
         <View style={styles.cardHeader}>
-          <Text style={styles.locationText}>📍 {locationName}</Text>
-          <View style={[styles.statusBadge, { backgroundColor: status.color + '20' }]}>
-            <Text style={[styles.statusBadgeText, { color: status.color }]}>{status.text}</Text>
+          <View style={styles.locationWrapper}>
+            <Text style={styles.locationLabel}>TITIK PANTAU</Text>
+            <Text style={styles.locationName}>📍 {locationName}</Text>
+          </View>
+          <View style={[styles.badge, { backgroundColor: status.color + '15' }]}>
+            <View style={[styles.dot, { backgroundColor: status.color }]} />
+            <Text style={[styles.badgeText, { color: status.color }]}>{status.text}</Text>
           </View>
         </View>
-        <Text style={styles.levelText}>
-          Ketinggian: {(item.water_level_cm / 100).toFixed(2)} m ({item.water_level_cm} cm)
-        </Text>
-        <Text style={styles.timeText}>🕐 {timestamp}</Text>
+
+        <View style={styles.levelContainer}>
+          <Text style={styles.levelLabel}>Ketinggian Air</Text>
+          <View style={styles.levelValueRow}>
+            <Text style={styles.levelMainValue}>{(item.water_level_cm / 100).toFixed(2)}</Text>
+            <Text style={styles.levelUnit}>Meter</Text>
+            <Text style={styles.levelSubValue}>({item.water_level_cm} cm)</Text>
+          </View>
+        </View>
+
+        <View style={styles.cardFooter}>
+          <Text style={styles.timeText}>🕒 {timestamp} WIB</Text>
+        </View>
       </View>
     );
   };
 
-  if (error) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.headerText}>Riwayat Ketinggian Air 📊</Text>
+  return (
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" />
+      
+      {/* Header Area */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Riwayat Data</Text>
+        <View style={styles.subHeaderRow}>
+          <Text style={styles.subHeader}>Log Sensor Real-time</Text>
+          {!loading && historyData.length > 0 && (
+            <View style={styles.countBadge}>
+              <Text style={styles.countText}>{historyData.length} Data</Text>
+            </View>
+          )}
         </View>
-        <View style={styles.loadingContainer}>
-          <Text style={styles.errorIcon}>⚠️</Text>
-          <Text style={styles.errorText}>{error}</Text>
+      </View>
+      
+      {loading ? (
+        <View style={styles.stateContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.stateText}>Sinkronisasi riwayat...</Text>
+        </View>
+      ) : error ? (
+        <View style={styles.stateContainer}>
+          <Text style={styles.stateIcon}>📡</Text>
+          <Text style={styles.stateText}>Gagal mengambil riwayat. Periksa Tailscale.</Text>
           <TouchableOpacity style={styles.retryButton} onPress={fetchHistoryData}>
             <Text style={styles.retryButtonText}>Coba Lagi</Text>
           </TouchableOpacity>
         </View>
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerText}>Riwayat Ketinggian Air 📊</Text>
-        {!loading && (
-          <Text style={styles.subText}>{historyData.length} catatan ditemukan</Text>
-        )}
-      </View>
-      
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#3498DB" />
-          <Text style={styles.loadingText}>Mengambil data dari server...</Text>
-        </View>
       ) : historyData.length === 0 ? (
-        <View style={styles.loadingContainer}>
-          <Text style={styles.emptyIcon}>📭</Text>
-          <Text style={styles.emptyText}>Belum ada data riwayat.</Text>
+        <View style={styles.stateContainer}>
+          <Text style={styles.stateIcon}>📭</Text>
+          <Text style={styles.stateText}>Belum ada data riwayat tersedia.</Text>
         </View>
       ) : (
         <FlatList
           data={historyData}
           keyExtractor={item => String(item.id)}
           renderItem={renderItem}
-          contentContainerStyle={styles.listContainer}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#3498DB']} />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />
           }
         />
       )}
-    </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F7FA' },
-  header: { padding: 16, backgroundColor: '#FFFFFF', elevation: 2 },
-  headerText: { fontSize: 18, fontWeight: 'bold', color: '#2C3E50' },
-  subText: { fontSize: 12, color: '#7F8C8D', marginTop: 4 },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 10, color: '#7F8C8D' },
-  listContainer: { padding: 16 },
-  card: { backgroundColor: '#FFFFFF', padding: 16, marginBottom: 10, borderRadius: 8, elevation: 1 },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  locationText: { fontSize: 14, fontWeight: '600', color: '#2C3E50' },
-  statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
-  statusBadgeText: { fontSize: 12, fontWeight: 'bold' },
-  timeText: { fontSize: 12, color: '#95A5A6', marginTop: 4 },
-  levelText: { fontSize: 16, fontWeight: 'bold', color: '#2C3E50', marginBottom: 4 },
+  container: { 
+    flex: 1, 
+    backgroundColor: COLORS.background 
+  },
+  header: { 
+    paddingHorizontal: 24, 
+    paddingVertical: 20, 
+    backgroundColor: COLORS.background 
+  },
+  headerTitle: { 
+    fontSize: 32, 
+    fontWeight: '900', 
+    color: COLORS.textMain,
+    letterSpacing: -1
+  },
+  subHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 4
+  },
+  subHeader: { 
+    fontSize: 15, 
+    fontWeight: '600',
+    color: COLORS.textMuted 
+  },
+  countBadge: {
+    backgroundColor: COLORS.textMain,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6
+  },
+  countText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: '800'
+  },
 
-  // Error & Empty states
-  errorIcon: { fontSize: 48, marginBottom: 16 },
-  errorText: { fontSize: 16, color: '#E74C3C', textAlign: 'center', marginHorizontal: 32, marginBottom: 20 },
-  retryButton: { backgroundColor: '#3498DB', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8 },
-  retryButtonText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 14 },
-  emptyIcon: { fontSize: 48, marginBottom: 16 },
-  emptyText: { fontSize: 16, color: '#7F8C8D' },
+  // List Styles
+  listContent: { 
+    paddingHorizontal: 24,
+    paddingBottom: 32
+  },
+
+  // Card Styles
+  card: { 
+    backgroundColor: COLORS.cardBg, 
+    borderRadius: 20,
+    padding: 20, 
+    marginBottom: 16, 
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    // Soft Shadow
+    shadowColor: '#64748B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2
+  },
+  cardHeader: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'flex-start',
+    marginBottom: 20 
+  },
+  locationWrapper: {
+    flex: 1,
+    marginRight: 8
+  },
+  locationLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: COLORS.textMuted,
+    letterSpacing: 1,
+    marginBottom: 4
+  },
+  locationName: { 
+    fontSize: 15, 
+    fontWeight: '700', 
+    color: COLORS.textMain 
+  },
+  
+  // Badge Styles
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 6
+  },
+  badgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase'
+  },
+
+  // Level Info Styles
+  levelContainer: {
+    marginBottom: 20
+  },
+  levelLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.textMuted,
+    marginBottom: 4
+  },
+  levelValueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline'
+  },
+  levelMainValue: {
+    fontSize: 32,
+    fontWeight: '900',
+    color: COLORS.textMain,
+    letterSpacing: -1
+  },
+  levelUnit: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.textMuted,
+    marginLeft: 4
+  },
+  levelSubValue: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: COLORS.textMuted,
+    marginLeft: 10
+  },
+
+  cardFooter: {
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border + '80'
+  },
+  timeText: { 
+    fontSize: 12, 
+    fontWeight: '600',
+    color: COLORS.textMuted 
+  },
+
+  // State Screens (Loading, Error, Empty)
+  stateContainer: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    paddingHorizontal: 40 
+  },
+  stateText: { 
+    marginTop: 16, 
+    color: COLORS.textMuted,
+    fontSize: 15,
+    fontWeight: '500',
+    textAlign: 'center'
+  },
+  stateIcon: { fontSize: 48, marginBottom: 8 },
+  retryButton: { 
+    marginTop: 24,
+    backgroundColor: COLORS.textMain, 
+    paddingHorizontal: 32, 
+    paddingVertical: 14, 
+    borderRadius: 12 
+  },
+  retryButtonText: { 
+    color: '#FFFFFF', 
+    fontWeight: 'bold' 
+  },
 });
 
 export default HistoryScreen;

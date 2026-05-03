@@ -1,10 +1,20 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, ActivityIndicator, TouchableOpacity, RefreshControl } from 'react-native';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps'; // <-- IMPORT MAPS DI SINI
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { getLocations, getLogs, getPredictions } from '../config/apiClient';
 import { RISK_LABELS, getRiskFromLevel } from '../config/api';
 
-const DashboardScreen = () => {
+// Palet warna premium (Ultra-Clean Slate & Sky UI)
+const COLORS = {
+  background: '#F8FAFC', 
+  cardBg: '#FFFFFF',
+  textMain: '#0F172A',   
+  textMuted: '#64748B',  
+  border: '#E2E8F0', // Slate 200 untuk border yang sangat halus dan tipis     
+  primary: '#0EA5E9',    
+};
+
+const DashboardScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
@@ -12,7 +22,7 @@ const DashboardScreen = () => {
   const [latestPrediction, setLatestPrediction] = useState(null);
   const [locations, setLocations] = useState([]);
 
-  // Koordinat default fallback (Area Jakarta - Manggarai)
+  // Koordinat default Jakarta - Manggarai
   const defaultRegion = {
     latitude: -6.2088,
     longitude: 106.8456,
@@ -24,17 +34,14 @@ const DashboardScreen = () => {
     setLoading(true);
     setError(null);
     try {
-      // Ambil semua data secara paralel
       const [locationsData, logsData, predictionsData] = await Promise.all([
         getLocations(),
         getLogs(),
         getPredictions(),
       ]);
 
-      // Simpan lokasi
       setLocations(locationsData || []);
 
-      // Ambil log terbaru (data terakhir berdasarkan timestamp)
       if (logsData && logsData.length > 0) {
         const sorted = [...logsData].sort(
           (a, b) => new Date(b.timestamp) - new Date(a.timestamp),
@@ -42,7 +49,6 @@ const DashboardScreen = () => {
         setLatestLog(sorted[0]);
       }
 
-      // Ambil prediksi terbaru (berdasarkan timestamp pembuatan)
       if (predictionsData && predictionsData.length > 0) {
         const sorted = [...predictionsData].sort(
           (a, b) => new Date(b.timestamp) - new Date(a.timestamp),
@@ -60,32 +66,23 @@ const DashboardScreen = () => {
     fetchData();
   }, [fetchData]);
 
-  // Pull-to-refresh handler
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await fetchData();
     setRefreshing(false);
   }, [fetchData]);
 
-  // Tentukan status dan warna berdasarkan prediksi atau level air
   const getStatusInfo = () => {
-    // Prioritaskan data prediksi jika ada
-    if (latestPrediction) {
-      return getRiskFromLevel(latestPrediction.predicted_level_cm);
-    }
-    // Fallback berdasarkan water level aktual
-    if (latestLog) {
-      return getRiskFromLevel(latestLog.water_level_cm);
-    }
+    if (latestPrediction) return getRiskFromLevel(latestPrediction.predicted_level_cm);
+    if (latestLog) return getRiskFromLevel(latestLog.water_level_cm);
     return RISK_LABELS.low;
   };
 
   const statusInfo = getStatusInfo();
   const waterLevelText = latestLog
-    ? `${(latestLog.water_level_cm / 100).toFixed(1)} Meter`
-    : '-- Meter';
+    ? `${(latestLog.water_level_cm / 100).toFixed(1)}`
+    : '--';
 
-  // Hitung region peta dari lokasi pertama atau gunakan default
   const mapRegion =
     locations.length > 0
       ? {
@@ -100,22 +97,8 @@ const DashboardScreen = () => {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#3498DB" />
-          <Text style={styles.loadingText}>Memuat data dari server...</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  if (error) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <Text style={styles.errorIcon}>⚠️</Text>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={fetchData}>
-            <Text style={styles.retryButtonText}>Coba Lagi</Text>
-          </TouchableOpacity>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Menyinkronkan data...</Text>
         </View>
       </SafeAreaView>
     );
@@ -125,83 +108,100 @@ const DashboardScreen = () => {
     <SafeAreaView style={styles.container}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#3498DB']} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />
         }
       >
         
-        {/* Header */}
+        {/* Header Seksi */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>RiverEye 🌊</Text>
+          <Text style={styles.headerTitle}>RiverEye</Text>
           <Text style={styles.subHeader}>Pemantauan Debit Air Real-time</Text>
         </View>
 
-        {/* Hero Section: Status Ketinggian Air */}
-        <View style={[styles.card, { backgroundColor: statusInfo.color + '20', borderColor: statusInfo.color, borderWidth: 1 }]}>
-          <Text style={styles.cardTitle}>Status Saat Ini</Text>
-          <Text style={[styles.statusText, { color: statusInfo.color }]}>{statusInfo.text}</Text>
-          <Text style={styles.waterLevel}>{waterLevelText}</Text>
+        {/* Hero Card: Status Air (Murni menggunakan style card standar, PASTI bersih) */}
+        <View style={styles.card}>
+          <View style={styles.heroHeader}>
+            <Text style={styles.cardLabel}>STATUS SAAT INI</Text>
+            <View style={[styles.badge, { backgroundColor: statusInfo.color + '1A' }]}>
+              <View style={[styles.dot, { backgroundColor: statusInfo.color }]} />
+              <Text style={[styles.badgeText, { color: statusInfo.color }]}>{statusInfo.text}</Text>
+            </View>
+          </View>
+
+          <View style={styles.waterLevelContainer}>
+            <Text style={styles.waterLevelNumber}>{waterLevelText}</Text>
+            <Text style={styles.waterLevelUnit}>Meter</Text>
+          </View>
+
           {latestLog && (
-            <Text style={styles.timestampText}>
-              Terakhir update: {new Date(latestLog.timestamp).toLocaleString('id-ID')}
-            </Text>
+            <View style={styles.timestampBox}>
+              <Text style={styles.timestampText}>
+                Update: {new Date(latestLog.timestamp).toLocaleString('id-ID', { hour: '2-digit', minute:'2-digit', day:'numeric', month:'short' })}
+              </Text>
+            </View>
           )}
         </View>
 
-        {/* Prediksi Banjir */}
+        {/* Card: Prediksi AI */}
         {latestPrediction && (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Prediksi Banjir 🔮</Text>
+            <Text style={styles.cardTitle}>Prediksi AI</Text>
             <View style={styles.predictionRow}>
-              <Text style={styles.predictionLabel}>Level Prediksi:</Text>
-              <Text style={styles.predictionValue}>
-                {(latestPrediction.predicted_level_cm / 100).toFixed(1)} m
-              </Text>
+              <Text style={styles.predictionLabel}>Estimasi Ketinggian</Text>
+              <Text style={styles.predictionValue}>{(latestPrediction.predicted_level_cm / 100).toFixed(1)} m</Text>
             </View>
-            <View style={styles.predictionRow}>
-              <Text style={styles.predictionLabel}>Risiko:</Text>
-              <Text style={[styles.predictionValue, { color: statusInfo.color }]}>
-                {statusInfo.text}
-              </Text>
-            </View>
-            <View style={styles.predictionRow}>
-              <Text style={styles.predictionLabel}>Prediksi Untuk:</Text>
-              <Text style={styles.predictionValue}>
-                {new Date(latestPrediction.prediction_for_time).toLocaleString('id-ID')}
-              </Text>
+            <View style={[styles.predictionRow, styles.predictionRowLast]}>
+              <Text style={styles.predictionLabel}>Risiko Mendatang</Text>
+              <Text style={[styles.predictionValue, { color: statusInfo.color }]}>{statusInfo.text}</Text>
             </View>
           </View>
         )}
 
-        {/* Quick View: Live CCTV Placeholder (Masih abu-abu) */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Live CCTV (Area Papan Duga)</Text>
-          <View style={styles.placeholderBox}>
-            <Text style={styles.placeholderText}>[ Video Player RTSP Akan Tampil Di Sini ]</Text>
+        {/* Card: CCTV (Klik ke Tab Kamera) */}
+        <TouchableOpacity 
+          style={styles.card} 
+          activeOpacity={0.7}
+          onPress={() => navigation.navigate('Kamera')}
+        >
+          <View style={styles.cardHeaderWithLink}>
+            <Text style={styles.cardTitle}>Live CCTV Area</Text>
+            <Text style={styles.linkText}>Lihat Detail →</Text>
           </View>
-        </View>
+          <View style={styles.mediaBox} pointerEvents="none">
+            <Text style={styles.placeholderIcon}>📹</Text>
+            <Text style={styles.placeholderText}>Ketuk untuk buka siaran...</Text>
+          </View>
+        </TouchableOpacity>
 
-        {/* Interaktif: Peta Lokasi (SUDAH DIGANTI MAPS) */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Lokasi Sensor & Kamera</Text>
-          <View style={styles.mapContainer}>
+        {/* Card: Peta (Klik ke Tab Peta) */}
+        <TouchableOpacity 
+          style={styles.card} 
+          activeOpacity={0.7}
+          onPress={() => navigation.navigate('Peta')}
+        >
+          <View style={styles.cardHeaderWithLink}>
+            <Text style={styles.cardTitle}>Lokasi Sensor</Text>
+            <Text style={styles.linkText}>Buka Peta →</Text>
+          </View>
+          <View style={styles.mediaBox} pointerEvents="none">
             <MapView
               provider={PROVIDER_GOOGLE}
               style={styles.map}
               initialRegion={mapRegion}
-              scrollEnabled={false} // Dimatikan agar tidak bentrok dengan ScrollView halaman
-              zoomEnabled={false}   // Dimatikan agar pengguna harus buka halaman Peta utuh untuk interaksi
+              scrollEnabled={false}
+              zoomEnabled={false}
             >
               {locations.map((loc) => (
                 <Marker
                   key={loc.id}
                   coordinate={{ latitude: loc.latitude, longitude: loc.longitude }}
-                  title={loc.name}
                 />
               ))}
             </MapView>
           </View>
-        </View>
+        </TouchableOpacity>
 
       </ScrollView>
     </SafeAreaView>
@@ -209,41 +209,56 @@ const DashboardScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F7FA' },
-  scrollContent: { padding: 16 },
-  header: { marginBottom: 20, marginTop: 10 },
-  headerTitle: { fontSize: 28, fontWeight: 'bold', color: '#2C3E50' },
-  subHeader: { fontSize: 14, color: '#7F8C8D' },
-  card: { backgroundColor: '#FFFFFF', borderRadius: 12, padding: 16, marginBottom: 16, elevation: 3 }, 
-  cardTitle: { fontSize: 16, fontWeight: '600', color: '#34495E', marginBottom: 8 },
-  statusText: { fontSize: 24, fontWeight: 'bold' },
-  waterLevel: { fontSize: 48, fontWeight: 'bold', color: '#2C3E50', marginTop: 8 },
-  timestampText: { fontSize: 12, color: '#95A5A6', marginTop: 8 },
+  container: { flex: 1, backgroundColor: COLORS.background },
+  scrollContent: { padding: 24, paddingBottom: 40 },
   
-  predictionRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  predictionLabel: { fontSize: 14, color: '#7F8C8D' },
-  predictionValue: { fontSize: 14, fontWeight: 'bold', color: '#2C3E50' },
+  header: { marginBottom: 24, marginTop: 8 },
+  headerTitle: { fontSize: 32, fontWeight: '900', color: COLORS.textMain, letterSpacing: -1 },
+  subHeader: { fontSize: 16, fontWeight: '500', color: COLORS.textMuted, marginTop: 4 },
 
-  placeholderBox: { height: 200, backgroundColor: '#BDC3C7', borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
-  placeholderText: { color: '#FFFFFF', fontWeight: '500' },
+  // GAYA KARTU DASAR DENGAN BORDER & SHADOW HALUS (KONSISTEN UNTUK SEMUA)
+  card: { 
+    backgroundColor: COLORS.cardBg, 
+    borderRadius: 24, 
+    padding: 24, 
+    marginBottom: 24, 
+    borderWidth: 1, 
+    borderColor: COLORS.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04, 
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  cardTitle: { fontSize: 18, fontWeight: '700', color: COLORS.textMain },
+  cardLabel: { fontSize: 10, fontWeight: '800', color: COLORS.textMuted, letterSpacing: 1 },
+  cardHeaderWithLink: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  linkText: { fontSize: 12, color: COLORS.primary, fontWeight: '700' },
+
+  heroHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
+  badge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
+  dot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
+  badgeText: { fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
   
-  // Style khusus untuk wadah peta di Dashboard
-  mapContainer: { 
-    height: 200, // Tinggi yang sama dengan placeholder sebelumnya
-    borderRadius: 8, 
-    overflow: 'hidden' // Agar ujung peta ikut membulat (rounded corners)
-  },
-  map: { 
-    flex: 1 
-  },
+  waterLevelContainer: { flexDirection: 'row', alignItems: 'baseline' },
+  waterLevelNumber: { fontSize: 72, fontWeight: '900', color: COLORS.textMain, letterSpacing: -2, lineHeight: 80 },
+  waterLevelUnit: { fontSize: 24, fontWeight: '600', color: COLORS.textMuted, marginLeft: 8 },
+  
+  timestampBox: { marginTop: 24, paddingTop: 16, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.border },
+  timestampText: { fontSize: 13, fontWeight: '500', color: COLORS.textMuted },
+  
+  predictionRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
+  predictionRowLast: { borderBottomWidth: 0, paddingBottom: 0 },
+  predictionLabel: { fontSize: 15, fontWeight: '500', color: COLORS.textMuted },
+  predictionValue: { fontSize: 16, fontWeight: '700', color: COLORS.textMain },
 
-  // Loading & Error states
+  mediaBox: { height: 180, backgroundColor: '#F1F5F9', borderRadius: 16, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
+  placeholderIcon: { fontSize: 32, marginBottom: 8 },
+  placeholderText: { color: COLORS.textMuted, fontWeight: '600', fontSize: 14 },
+  map: { flex: 1, width: '100%' },
+
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 10, color: '#7F8C8D', fontSize: 14 },
-  errorIcon: { fontSize: 48, marginBottom: 16 },
-  errorText: { fontSize: 16, color: '#E74C3C', textAlign: 'center', marginHorizontal: 32, marginBottom: 20 },
-  retryButton: { backgroundColor: '#3498DB', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8 },
-  retryButtonText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 14 },
+  loadingText: { marginTop: 16, color: COLORS.textMuted, fontWeight: '500', fontSize: 15 },
 });
 
 export default DashboardScreen;
