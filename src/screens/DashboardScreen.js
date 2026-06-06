@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, ActivityIndicator, TouchableOpacity, RefreshControl } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
-import { getLocations, getLogs, getPredictions } from '../config/apiClient';
-import { RISK_LABELS, getRiskFromLevel } from '../config/api';
 
 // Palet warna premium (Ultra-Clean Slate & Sky UI)
 const COLORS = {
@@ -10,56 +8,50 @@ const COLORS = {
   cardBg: '#FFFFFF',
   textMain: '#0F172A',   
   textMuted: '#64748B',  
-  border: '#E2E8F0', // Slate 200 untuk border yang sangat halus dan tipis     
-  primary: '#0EA5E9',    
+  border: '#F1F5F9',     
+  primary: '#0EA5E9',
+  safe: '#10B981',     // Emerald
+  warning: '#F59E0B',  // Amber
+  danger: '#EF4444',   // Red
 };
+
+// --- MOCK DATA NODE (Sembari menunggu Backend Arthur) ---
+const MOCK_NODES = [
+  {
+    id: 'ND-001',
+    name: 'Pintu Air ITS',
+    coordinates: { latitude: -7.2823, longitude: 112.7949 },
+    hardware: { has_sensor: true, has_camera: true },
+    status: { level_cm: 210, risk: 'BAHAYA', color: COLORS.danger }
+  },
+  {
+    id: 'ND-002',
+    name: 'Sungai Keputih',
+    coordinates: { latitude: -7.2855, longitude: 112.7988 },
+    hardware: { has_sensor: true, has_camera: false },
+    status: { level_cm: 150, risk: 'WASPADA', color: COLORS.warning }
+  },
+  {
+    id: 'ND-003',
+    name: 'Saluran Mulyorejo',
+    coordinates: { latitude: -7.2711, longitude: 112.7889 },
+    hardware: { has_sensor: true, has_camera: true },
+    status: { level_cm: 80, risk: 'AMAN', color: COLORS.safe }
+  }
+];
 
 const DashboardScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState(null);
-  const [latestLog, setLatestLog] = useState(null);
-  const [latestPrediction, setLatestPrediction] = useState(null);
-  const [locations, setLocations] = useState([]);
-
-  // Koordinat default Jakarta - Manggarai
-  const defaultRegion = {
-    latitude: -6.2088,
-    longitude: 106.8456,
-    latitudeDelta: 0.5,
-    longitudeDelta: 0.5,
-  };
+  const [nodes, setNodes] = useState([]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    setError(null);
-    try {
-      const [locationsData, logsData, predictionsData] = await Promise.all([
-        getLocations(),
-        getLogs(),
-        getPredictions(),
-      ]);
-
-      setLocations(locationsData || []);
-
-      if (logsData && logsData.length > 0) {
-        const sorted = [...logsData].sort(
-          (a, b) => new Date(b.timestamp) - new Date(a.timestamp),
-        );
-        setLatestLog(sorted[0]);
-      }
-
-      if (predictionsData && predictionsData.length > 0) {
-        const sorted = [...predictionsData].sort(
-          (a, b) => new Date(b.timestamp) - new Date(a.timestamp),
-        );
-        setLatestPrediction(sorted[0]);
-      }
-    } catch (err) {
-      setError(err.message);
-    } finally {
+    // Simulasi delay jaringan
+    setTimeout(() => {
+      setNodes(MOCK_NODES);
       setLoading(false);
-    }
+    }, 1000);
   }, []);
 
   useEffect(() => {
@@ -72,33 +64,17 @@ const DashboardScreen = ({ navigation }) => {
     setRefreshing(false);
   }, [fetchData]);
 
-  const getStatusInfo = () => {
-    if (latestPrediction) return getRiskFromLevel(latestPrediction.predicted_level_cm);
-    if (latestLog) return getRiskFromLevel(latestLog.water_level_cm);
-    return RISK_LABELS.low;
-  };
-
-  const statusInfo = getStatusInfo();
-  const waterLevelText = latestLog
-    ? `${(latestLog.water_level_cm / 100).toFixed(1)}`
-    : '--';
-
-  const mapRegion =
-    locations.length > 0
-      ? {
-          latitude: locations[0].latitude,
-          longitude: locations[0].longitude,
-          latitudeDelta: 0.05,
-          longitudeDelta: 0.05,
-        }
-      : defaultRegion;
+  // Menghitung statistik jaringan
+  const totalNodes = nodes.length;
+  const dangerNodes = nodes.filter(n => n.status.risk === 'BAHAYA' || n.status.risk === 'WASPADA').length;
+  const safeNodes = totalNodes - dangerNodes;
 
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.loadingText}>Menyinkronkan data...</Text>
+          <Text style={styles.loadingText}>Menyinkronkan Jaringan Node...</Text>
         </View>
       </SafeAreaView>
     );
@@ -114,89 +90,93 @@ const DashboardScreen = ({ navigation }) => {
         }
       >
         
-        {/* Header Seksi */}
+        {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>RiverEye</Text>
-          <Text style={styles.subHeader}>Pemantauan Debit Air Real-time</Text>
+          <Text style={styles.headerTitle}>RiverEye Network</Text>
+          <Text style={styles.subHeader}>Sistem Manajemen Bencana Cerdas</Text>
         </View>
 
-        {/* Hero Card: Status Air (Murni menggunakan style card standar, PASTI bersih) */}
-        <View style={styles.card}>
-          <View style={styles.heroHeader}>
-            <Text style={styles.cardLabel}>STATUS SAAT INI</Text>
-            <View style={[styles.badge, { backgroundColor: statusInfo.color + '1A' }]}>
-              <View style={[styles.dot, { backgroundColor: statusInfo.color }]} />
-              <Text style={[styles.badgeText, { color: statusInfo.color }]}>{statusInfo.text}</Text>
-            </View>
+        {/* NETWORK OVERVIEW (Summary Cards) */}
+        <View style={styles.summaryRow}>
+          <View style={[styles.summaryCard, { backgroundColor: COLORS.primary + '10' }]}>
+            <Text style={[styles.summaryValue, { color: COLORS.primary }]}>{totalNodes}</Text>
+            <Text style={styles.summaryLabel}>Total Node</Text>
           </View>
-
-          <View style={styles.waterLevelContainer}>
-            <Text style={styles.waterLevelNumber}>{waterLevelText}</Text>
-            <Text style={styles.waterLevelUnit}>Meter</Text>
+          <View style={[styles.summaryCard, { backgroundColor: COLORS.danger + '10' }]}>
+            <Text style={[styles.summaryValue, { color: COLORS.danger }]}>{dangerNodes}</Text>
+            <Text style={styles.summaryLabel}>Perhatian</Text>
           </View>
-
-          {latestLog && (
-            <View style={styles.timestampBox}>
-              <Text style={styles.timestampText}>
-                Update: {new Date(latestLog.timestamp).toLocaleString('id-ID', { hour: '2-digit', minute:'2-digit', day:'numeric', month:'short' })}
-              </Text>
-            </View>
-          )}
+          <View style={[styles.summaryCard, { backgroundColor: COLORS.safe + '10' }]}>
+            <Text style={[styles.summaryValue, { color: COLORS.safe }]}>{safeNodes}</Text>
+            <Text style={styles.summaryLabel}>Aman</Text>
+          </View>
         </View>
 
-        {/* Card: Prediksi AI */}
-        {latestPrediction && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Prediksi AI</Text>
-            <View style={styles.predictionRow}>
-              <Text style={styles.predictionLabel}>Estimasi Ketinggian</Text>
-              <Text style={styles.predictionValue}>{(latestPrediction.predicted_level_cm / 100).toFixed(1)} m</Text>
-            </View>
-            <View style={[styles.predictionRow, styles.predictionRowLast]}>
-              <Text style={styles.predictionLabel}>Risiko Mendatang</Text>
-              <Text style={[styles.predictionValue, { color: statusInfo.color }]}>{statusInfo.text}</Text>
-            </View>
-          </View>
-        )}
+        {/* PRIORITY NODES (Daftar Node Kritis) */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Status Titik Pantau</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Peta')}>
+            <Text style={styles.linkText}>Lihat Peta →</Text>
+          </TouchableOpacity>
+        </View>
 
-        {/* Card: CCTV (Klik ke Tab Kamera) */}
-        <TouchableOpacity 
-          style={styles.card} 
-          activeOpacity={0.7}
-          onPress={() => navigation.navigate('Kamera')}
-        >
-          <View style={styles.cardHeaderWithLink}>
-            <Text style={styles.cardTitle}>Live CCTV Area</Text>
-            <Text style={styles.linkText}>Lihat Detail →</Text>
-          </View>
-          <View style={styles.mediaBox} pointerEvents="none">
-            <Text style={styles.placeholderIcon}>📹</Text>
-            <Text style={styles.placeholderText}>Ketuk untuk buka siaran...</Text>
-          </View>
-        </TouchableOpacity>
+        {nodes.map((node) => (
+          <TouchableOpacity 
+            key={node.id} 
+            style={[styles.nodeCard, { borderColor: node.status.color + '30', borderWidth: 1 }]}
+            activeOpacity={0.7}
+            onPress={() => navigation.navigate('Peta')} // Sementara arahkan ke peta
+          >
+            <View style={styles.nodeHeader}>
+              <View>
+                <Text style={styles.nodeName}>{node.name}</Text>
+                <Text style={styles.nodeId}>ID: {node.id}</Text>
+              </View>
+              <View style={[styles.badge, { backgroundColor: node.status.color + '15' }]}>
+                <View style={[styles.dot, { backgroundColor: node.status.color }]} />
+                <Text style={[styles.badgeText, { color: node.status.color }]}>{node.status.risk}</Text>
+              </View>
+            </View>
 
-        {/* Card: Peta (Klik ke Tab Peta) */}
+            <View style={styles.nodeFooter}>
+              <Text style={styles.nodeLevel}>{(node.status.level_cm / 100).toFixed(2)} <Text style={styles.unit}>Meter</Text></Text>
+              
+              {/* Indikator Hardware Tambahan (Modular) */}
+              <View style={styles.hardwareRow}>
+                {node.hardware.has_sensor && <Text style={styles.hardwareIcon}>💧 Sensor</Text>}
+                {node.hardware.has_camera && <Text style={styles.hardwareIcon}>📹 CCTV</Text>}
+              </View>
+            </View>
+          </TouchableOpacity>
+        ))}
+
+        {/* Card: Peta Jaringan Keseluruhan */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Peta Jaringan</Text>
+        </View>
         <TouchableOpacity 
           style={styles.card} 
           activeOpacity={0.7}
           onPress={() => navigation.navigate('Peta')}
         >
-          <View style={styles.cardHeaderWithLink}>
-            <Text style={styles.cardTitle}>Lokasi Sensor</Text>
-            <Text style={styles.linkText}>Buka Peta →</Text>
-          </View>
           <View style={styles.mediaBox} pointerEvents="none">
             <MapView
               provider={PROVIDER_GOOGLE}
               style={styles.map}
-              initialRegion={mapRegion}
+              initialRegion={{
+                latitude: MOCK_NODES[0].coordinates.latitude,
+                longitude: MOCK_NODES[0].coordinates.longitude,
+                latitudeDelta: 0.05,
+                longitudeDelta: 0.05,
+              }}
               scrollEnabled={false}
               zoomEnabled={false}
             >
-              {locations.map((loc) => (
+              {nodes.map((loc) => (
                 <Marker
                   key={loc.id}
-                  coordinate={{ latitude: loc.latitude, longitude: loc.longitude }}
+                  coordinate={loc.coordinates}
+                  pinColor={loc.status.color} // Warna pin sesuai status bahaya
                 />
               ))}
             </MapView>
@@ -214,47 +194,48 @@ const styles = StyleSheet.create({
   
   header: { marginBottom: 24, marginTop: 8 },
   headerTitle: { fontSize: 32, fontWeight: '900', color: COLORS.textMain, letterSpacing: -1 },
-  subHeader: { fontSize: 16, fontWeight: '500', color: COLORS.textMuted, marginTop: 4 },
+  subHeader: { fontSize: 15, fontWeight: '600', color: COLORS.textMuted, marginTop: 4 },
 
-  // GAYA KARTU DASAR DENGAN BORDER & SHADOW HALUS (KONSISTEN UNTUK SEMUA)
-  card: { 
+  // Summary Cards
+  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 32 },
+  summaryCard: { flex: 1, padding: 16, borderRadius: 20, alignItems: 'center', marginHorizontal: 4 },
+  summaryValue: { fontSize: 28, fontWeight: '900', marginBottom: 4 },
+  summaryLabel: { fontSize: 12, fontWeight: '700', color: COLORS.textMuted, textTransform: 'uppercase' },
+
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 16, paddingHorizontal: 4 },
+  sectionTitle: { fontSize: 18, fontWeight: '800', color: COLORS.textMain },
+  linkText: { fontSize: 13, color: COLORS.primary, fontWeight: '700', marginBottom: 2 },
+
+  // Node Cards
+  nodeCard: { 
     backgroundColor: COLORS.cardBg, 
-    borderRadius: 24, 
-    padding: 24, 
-    marginBottom: 24, 
-    borderWidth: 1, 
-    borderColor: COLORS.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04, 
+    borderRadius: 20, 
+    padding: 20, 
+    marginBottom: 16,
+    shadowColor: '#64748B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.03,
     shadowRadius: 10,
     elevation: 2,
   },
-  cardTitle: { fontSize: 18, fontWeight: '700', color: COLORS.textMain },
-  cardLabel: { fontSize: 10, fontWeight: '800', color: COLORS.textMuted, letterSpacing: 1 },
-  cardHeaderWithLink: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  linkText: { fontSize: 12, color: COLORS.primary, fontWeight: '700' },
+  nodeHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
+  nodeName: { fontSize: 16, fontWeight: '700', color: COLORS.textMain, marginBottom: 2 },
+  nodeId: { fontSize: 11, fontWeight: '700', color: COLORS.textMuted, letterSpacing: 0.5 },
+  
+  badge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  dot: { width: 6, height: 6, borderRadius: 3, marginRight: 6 },
+  badgeText: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
 
-  heroHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
-  badge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
-  dot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
-  badgeText: { fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+  nodeFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.border, paddingTop: 16 },
+  nodeLevel: { fontSize: 24, fontWeight: '900', color: COLORS.textMain, letterSpacing: -1 },
+  unit: { fontSize: 14, fontWeight: '600', color: COLORS.textMuted },
   
-  waterLevelContainer: { flexDirection: 'row', alignItems: 'baseline' },
-  waterLevelNumber: { fontSize: 72, fontWeight: '900', color: COLORS.textMain, letterSpacing: -2, lineHeight: 80 },
-  waterLevelUnit: { fontSize: 24, fontWeight: '600', color: COLORS.textMuted, marginLeft: 8 },
-  
-  timestampBox: { marginTop: 24, paddingTop: 16, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.border },
-  timestampText: { fontSize: 13, fontWeight: '500', color: COLORS.textMuted },
-  
-  predictionRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
-  predictionRowLast: { borderBottomWidth: 0, paddingBottom: 0 },
-  predictionLabel: { fontSize: 15, fontWeight: '500', color: COLORS.textMuted },
-  predictionValue: { fontSize: 16, fontWeight: '700', color: COLORS.textMain },
+  hardwareRow: { flexDirection: 'row' },
+  hardwareIcon: { fontSize: 11, fontWeight: '700', color: COLORS.textMuted, backgroundColor: COLORS.background, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, marginLeft: 8, overflow: 'hidden' },
 
-  mediaBox: { height: 180, backgroundColor: '#F1F5F9', borderRadius: 16, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
-  placeholderIcon: { fontSize: 32, marginBottom: 8 },
-  placeholderText: { color: COLORS.textMuted, fontWeight: '600', fontSize: 14 },
+  // General Card
+  card: { backgroundColor: COLORS.cardBg, borderRadius: 24, padding: 8, marginBottom: 24 },
+  mediaBox: { height: 180, backgroundColor: '#F1F5F9', borderRadius: 20, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
   map: { flex: 1, width: '100%' },
 
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },

@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, SafeAreaView, StatusBar, TouchableOpacity } from 'react-native';
 import Video from 'react-native-video';
+import Icon from 'react-native-vector-icons/Ionicons'; // Menggunakan icon untuk tombol kembali
 
 // Palet warna modern (Slate & Sky UI)
 const COLORS = {
@@ -13,29 +14,68 @@ const COLORS = {
   danger: '#EF4444',     // Red 500
 };
 
-const CameraScreen = () => {
+const CameraScreen = ({ route, navigation }) => {
+  const [streamUrl, setStreamUrl] = useState(null);
+  const [isFetchingUrl, setIsFetchingUrl] = useState(true);
   const [isBuffering, setIsBuffering] = useState(true);
   const [videoError, setVideoError] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(Date.now()); // Kunci untuk memaksa reload video
+  const [refreshKey, setRefreshKey] = useState(Date.now());
 
-  // Link MP4 untuk testing (Nanti diganti RTSP dari Tamim)
-  const streamUrl = "https://www.w3schools.com/html/mov_bbb.mp4"; 
+  // Menerima data operan dari layar sebelumnya (Map/Dashboard)
+  const { nodeId, nodeName } = route?.params || {};
+
+  // Simulasi pemanggilan API untuk mendapatkan RTSP URL berdasarkan nodeId
+  useEffect(() => {
+    if (nodeId) {
+      setIsFetchingUrl(true);
+      setVideoError(false);
+      
+      // Simulasi delay jaringan (Nanti diganti dengan fetch() ke backend API)
+      const timer = setTimeout(() => {
+        // Mock URL, di sistem asli ini akan mereturn link RTSP spesifik untuk node ini
+        setStreamUrl("https://www.w3schools.com/html/mov_bbb.mp4");
+        setIsFetchingUrl(false);
+        setIsBuffering(true);
+      }, 1000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [nodeId, refreshKey]);
 
   const handleRefresh = () => {
-    setVideoError(false);
-    setIsBuffering(true);
-    setRefreshKey(Date.now()); // Mengubah key akan memaksa Video component untuk re-mount
+    setRefreshKey(Date.now()); 
   };
+
+  // Jika user langsung membuka tab Kamera tanpa memilih node
+  if (!nodeId) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.emptyStateContainer}>
+          <Text style={styles.emptyIcon}>🎥</Text>
+          <Text style={styles.emptyTitle}>Pilih Titik Pantau</Text>
+          <Text style={styles.emptyText}>Buka halaman Peta, pilih salah satu lokasi sensor, lalu ketuk "Lihat Live CCTV" untuk mulai memantau.</Text>
+          <TouchableOpacity style={styles.primaryButton} onPress={() => navigation.navigate('Peta')}>
+            <Text style={styles.primaryButtonText}>Buka Peta Sekarang</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
       
-      {/* Header Area */}
+      {/* Header Area dengan Tombol Back */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Live Monitoring</Text>
-          <Text style={styles.subHeader}>Area Papan Duga ITS</Text>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+            <Icon name="arrow-back" size={24} color={COLORS.textMain} />
+          </TouchableOpacity>
+          <View>
+            <Text style={styles.headerTitle}>Live Monitoring</Text>
+            <Text style={styles.subHeader}>{nodeName || `Node ${nodeId}`}</Text>
+          </View>
         </View>
         <View style={styles.liveBadge}>
           <View style={styles.liveDot} />
@@ -46,27 +86,30 @@ const CameraScreen = () => {
       {/* Video Player Container */}
       <View style={styles.videoWrapper}>
         <View style={styles.videoCard}>
-          {isBuffering && !videoError && (
+          {/* Tampilkan loading saat fetch URL atau buffering video */}
+          {(isFetchingUrl || isBuffering) && !videoError && (
             <View style={styles.loadingOverlay}>
               <ActivityIndicator size="large" color={COLORS.primary} />
-              <Text style={styles.loadingText}>Menghubungkan ke Kamera...</Text>
+              <Text style={styles.loadingText}>
+                {isFetchingUrl ? 'Mengambil rute kamera...' : 'Menghubungkan siaran...'}
+              </Text>
             </View>
           )}
 
           {videoError ? (
             <View style={styles.errorOverlay}>
               <Text style={styles.errorIcon}>📵</Text>
-              <Text style={styles.errorText}>Stream terputus atau link tidak valid</Text>
+              <Text style={styles.errorText}>Kamera offline atau koneksi terputus.</Text>
             </View>
-          ) : (
+          ) : streamUrl ? (
             <Video
-              key={refreshKey} // Penambahan key di sini adalah kunci perbaikannya
+              key={refreshKey}
               source={{ uri: streamUrl }}
               style={styles.videoPlayer}
               resizeMode="cover"
               onReadyForDisplay={() => setIsBuffering(false)}
               onLoadStart={() => setIsBuffering(true)}
-              onLoad={() => setIsBuffering(false)} // Tambahan untuk memastikan loading hilang setelah load sukses
+              onLoad={() => setIsBuffering(false)}
               onError={(e) => {
                 console.log("Error Video:", e);
                 setIsBuffering(false);
@@ -76,11 +119,11 @@ const CameraScreen = () => {
               repeat={true}
               muted={true}
             />
-          )}
+          ) : null}
 
           {/* Overlay Info di pojok video */}
           <View style={styles.videoOverlayInfo}>
-            <Text style={styles.overlayText}>CAM_01 | HD 1080p</Text>
+            <Text style={styles.overlayText}>{nodeId} | HD 1080p</Text>
           </View>
         </View>
       </View>
@@ -94,22 +137,25 @@ const CameraScreen = () => {
               <View style={[styles.statusDot, { backgroundColor: videoError ? COLORS.danger : '#10B981' }]} />
               <Text style={styles.statusValue}>{videoError ? 'Offline' : 'Online'}</Text>
             </View>
-            <Text style={styles.latencyText}>Latency: 120ms</Text>
+            <Text style={styles.latencyText}>{isFetchingUrl ? '-- ms' : 'Latency: 120ms'}</Text>
           </View>
         </View>
 
         <View style={styles.descriptionBox}>
-          <Text style={styles.descriptionTitle}>Catatan Tim Hardware:</Text>
+          <Text style={styles.descriptionTitle}>Informasi Jaringan:</Text>
           <Text style={styles.descriptionText}>
-            Kamera ini menggunakan transmisi RTSP via Tailscale. Pastikan mesin 'trexbbqpanggang' aktif untuk menerima siaran video real-time.
+            Siaran langsung dari modul kamera pada {nodeName || `Node ${nodeId}`}. Stream dikirimkan melalui jaringan privat Tailscale.
           </Text>
         </View>
 
         <TouchableOpacity 
           style={styles.refreshButton}
           onPress={handleRefresh}
+          disabled={isFetchingUrl}
         >
-          <Text style={styles.refreshButtonText}>Refresh Stream</Text>
+          <Text style={styles.refreshButtonText}>
+            {isFetchingUrl ? 'Memuat...' : 'Refresh Stream'}
+          </Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -128,8 +174,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center'
   },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  backButton: {
+    marginRight: 16,
+    padding: 4,
+  },
   headerTitle: { 
-    fontSize: 28, 
+    fontSize: 24, 
     fontWeight: '900', 
     color: COLORS.textMain,
     letterSpacing: -1
@@ -297,6 +351,42 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontWeight: '700',
     fontSize: 16
+  },
+  
+  // Empty State Styles
+  emptyStateContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  emptyIcon: {
+    fontSize: 64,
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: COLORS.textMain,
+    marginBottom: 8,
+  },
+  emptyText: {
+    fontSize: 15,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 32,
+  },
+  primaryButton: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  primaryButtonText: {
+    color: '#FFF',
+    fontSize: 15,
+    fontWeight: '700',
   }
 });
 
