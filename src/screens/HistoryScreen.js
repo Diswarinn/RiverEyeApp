@@ -1,17 +1,34 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, RefreshControl, SafeAreaView, StatusBar } from 'react-native';
+import React, { useState, useEffect, useCallback, useContext, useMemo } from 'react';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, RefreshControl, SafeAreaView, StatusBar, Platform } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { getLogs, getLocations } from '../config/apiClient';
 import { riskFromLevel } from '../config/nodes';
 
-const COLORS = {
+// Import Global Theme Context
+import { ThemeContext } from '../context/ThemeContext';
+
+// Palet warna premium - Light Mode
+const LIGHT_COLORS = {
   background: '#F8FAFC',
   cardBg: '#FFFFFF',
   textMain: '#0F172A',
   textMuted: '#64748B',
-  border: '#F1F5F9',
+  border: '#F1F5F9', // atau #E2E8F0
   primary: '#0EA5E9',
   danger: '#EF4444',
+  shadow: '#64748B',
+};
+
+// Palet warna premium - Dark Mode
+const DARK_COLORS = {
+  background: '#0F172A', 
+  cardBg: '#1E293B',    
+  textMain: '#F8FAFC',   
+  textMuted: '#94A3B8',  
+  border: '#334155',     
+  primary: '#38BDF8',    
+  danger: '#F87171',     
+  shadow: '#000000',     
 };
 
 const HistoryScreen = ({ route, navigation }) => {
@@ -23,6 +40,13 @@ const HistoryScreen = ({ route, navigation }) => {
 
   // Menerima parameter jika dinavigasikan dari detail Node di Peta
   const { nodeId, nodeName } = route?.params || {};
+
+  // MENGAMBIL STATE DARI GLOBAL CONTEXT
+  const themeContext = useContext(ThemeContext);
+  const isDarkMode = themeContext?.isDarkMode || false;
+  const themeColors = isDarkMode ? DARK_COLORS : LIGHT_COLORS;
+  
+  const styles = useMemo(() => getStyles(themeColors, isDarkMode), [themeColors, isDarkMode]);
 
   const fetchHistoryData = useCallback(async (isRefresh = false) => {
     if (!isRefresh) setLoading(true);
@@ -65,6 +89,14 @@ const HistoryScreen = ({ route, navigation }) => {
     fetchHistoryData();
   }, [fetchHistoryData]);
 
+  // Update status bar appearance
+  useEffect(() => {
+    StatusBar.setBarStyle(isDarkMode ? 'light-content' : 'dark-content');
+    if (Platform.OS === 'android') {
+      StatusBar.setBackgroundColor(themeColors.background);
+    }
+  }, [isDarkMode, themeColors.background]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await fetchHistoryData(true);
@@ -87,7 +119,7 @@ const HistoryScreen = ({ route, navigation }) => {
             <Text style={styles.locationLabel}>TITIK PANTAU</Text>
             <Text style={styles.locationName}>📍 {locationName}</Text>
           </View>
-          <View style={[styles.badge, { backgroundColor: status.color + '15' }]}>
+          <View style={[styles.badge, { backgroundColor: status.color + (isDarkMode ? '25' : '15') }]}>
             <View style={[styles.dot, { backgroundColor: status.color }]} />
             <Text style={[styles.badgeText, { color: status.color }]}>{status.text}</Text>
           </View>
@@ -112,6 +144,7 @@ const HistoryScreen = ({ route, navigation }) => {
   if (error) {
     return (
       <SafeAreaView style={styles.container}>
+        <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} backgroundColor={themeColors.background} />
         <View style={styles.stateContainer}>
           <Text style={styles.stateIcon}>📡</Text>
           <Text style={styles.stateText}>Gagal mengambil riwayat. Periksa koneksi.</Text>
@@ -125,13 +158,13 @@ const HistoryScreen = ({ route, navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} backgroundColor={themeColors.background} />
       
-      {/* Area Header dengan dukungan tombol Back jika difilter per Node */}
+      {/* Area Header */}
       <View style={styles.header}>
         {nodeId && (
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-            <Icon name="arrow-back" size={24} color={COLORS.textMain} />
+            <Icon name="arrow-back" size={24} color={themeColors.textMain} />
           </TouchableOpacity>
         )}
         <View style={styles.headerTitleContainer}>
@@ -139,8 +172,8 @@ const HistoryScreen = ({ route, navigation }) => {
           <View style={styles.subHeaderRow}>
             <Text style={styles.subHeader}>{nodeId ? (nodeName || `Node ${nodeId}`) : 'Log Sensor Real-time'}</Text>
             {!loading && historyData.length > 0 && (
-              <View style={styles.countBadge}>
-                <Text style={styles.countText}>{historyData.length} Data</Text>
+              <View style={[styles.countBadge, { backgroundColor: isDarkMode ? themeColors.border : themeColors.textMain }]}>
+                <Text style={[styles.countText, { color: isDarkMode ? themeColors.textMain : '#FFF' }]}>{historyData.length} Data</Text>
               </View>
             )}
           </View>
@@ -150,7 +183,7 @@ const HistoryScreen = ({ route, navigation }) => {
       {/* Content Area */}
       {loading ? (
         <View style={styles.stateContainer}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
+          <ActivityIndicator size="large" color={themeColors.primary} />
           <Text style={styles.stateText}>Sinkronisasi riwayat...</Text>
         </View>
       ) : historyData.length === 0 ? (
@@ -168,7 +201,7 @@ const HistoryScreen = ({ route, navigation }) => {
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[themeColors.primary]} tintColor={themeColors.primary} />
           }
         />
       )}
@@ -176,7 +209,8 @@ const HistoryScreen = ({ route, navigation }) => {
   );
 };
 
-const styles = StyleSheet.create({
+// Fungsi dinamis untuk membuat Style menyesuaikan Theme Colors
+const getStyles = (COLORS, isDarkMode) => StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   
   // Header Styles
@@ -212,13 +246,11 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted 
   },
   countBadge: {
-    backgroundColor: COLORS.textMain,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 6
   },
   countText: {
-    color: '#FFF',
     fontSize: 10,
     fontWeight: '800'
   },
@@ -231,11 +263,11 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 20, 
     marginBottom: 16, 
-    borderWidth: 0.5,
+    borderWidth: isDarkMode ? 1 : 0.5,
     borderColor: COLORS.border,
-    shadowColor: '#64748B',
+    shadowColor: COLORS.shadow,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.03, 
+    shadowOpacity: isDarkMode ? 0.2 : 0.03, 
     shadowRadius: 8,
     elevation: 2
   },
@@ -261,8 +293,8 @@ const styles = StyleSheet.create({
   stateContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
   stateText: { marginTop: 16, color: COLORS.textMuted, fontSize: 15, fontWeight: '500', textAlign: 'center' },
   stateIcon: { fontSize: 48, marginBottom: 8 },
-  retryButton: { marginTop: 24, backgroundColor: COLORS.textMain, paddingHorizontal: 32, paddingVertical: 14, borderRadius: 12 },
-  retryButtonText: { color: '#FFFFFF', fontWeight: 'bold' },
+  retryButton: { marginTop: 24, backgroundColor: isDarkMode ? COLORS.border : COLORS.textMain, paddingHorizontal: 32, paddingVertical: 14, borderRadius: 12 },
+  retryButtonText: { color: isDarkMode ? COLORS.textMain : '#FFFFFF', fontWeight: 'bold' },
 });
 
 export default HistoryScreen;

@@ -1,168 +1,374 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, ActivityIndicator, TouchableOpacity, RefreshControl } from 'react-native';
+import React, { useState, useEffect, useCallback, useContext } from 'react';
+import { View, Text, StyleSheet, SafeAreaView, ScrollView, ActivityIndicator, TouchableOpacity, RefreshControl, Image, StatusBar, Platform } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import Icon from 'react-native-vector-icons/Ionicons';
+import axios from 'axios'; 
+
+// Import fungsi API dan pemroses Node sesungguhnya dari Backend
 import { getLocations, getLogs } from '../config/apiClient';
 import { buildNodes } from '../config/nodes';
 
-// Palet warna premium (Ultra-Clean Slate & Sky UI)
-const COLORS = {
-  background: '#F8FAFC', 
+// Import Global Theme Context
+import { ThemeContext } from '../context/ThemeContext';
+
+// Palet warna premium (Ultra-Clean Slate & Sky UI) - Light Mode
+const LIGHT_COLORS = {
+  background: '#F8FAFC',
   cardBg: '#FFFFFF',
-  textMain: '#0F172A',   
-  textMuted: '#64748B',  
-  border: '#F1F5F9',     
+  textMain: '#0F172A',
+  textMuted: '#64748B',
+  border: '#F1F5F9',
   primary: '#0EA5E9',
-  safe: '#10B981',     // Emerald
-  warning: '#F59E0B',  // Amber
-  danger: '#EF4444',   // Red
+  safe: '#10B981',
+  warning: '#F59E0B',
+  danger: '#EF4444',
+  twitter: '#1DA1F2',
+  shadow: '#0F172A',
 };
 
-// Lokasi default peta jika belum ada node (Surabaya)
-const FALLBACK_REGION = { latitude: -7.2575, longitude: 112.7521 };
+// Palet warna premium - Dark Mode
+const DARK_COLORS = {
+  background: '#0F172A', 
+  cardBg: '#1E293B',    
+  textMain: '#F8FAFC',   
+  textMuted: '#94A3B8',  
+  border: '#334155',     
+  primary: '#38BDF8',    
+  safe: '#34D399',       
+  warning: '#FBBF24',    
+  danger: '#F87171',     
+  twitter: '#1DA1F2',    
+  shadow: '#000000',     
+};
+
+const FALLBACK_REGION = { latitude: -7.2800, longitude: 112.7950 };
 
 const DashboardScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [nodes, setNodes] = useState([]);
+  
+  // State khusus untuk Twitter Feeds
+  const [tweets, setTweets] = useState([]); 
+  const [loadingTweets, setLoadingTweets] = useState(false);
 
+  // MENGAMBIL STATE DARI GLOBAL CONTEXT
+  const themeContext = useContext(ThemeContext);
+  const isDarkMode = themeContext?.isDarkMode || false;
+  const toggleTheme = themeContext?.toggleTheme || (() => {});
+  
+  // Definisikan themeColors agar tidak error saat dipanggil
+  const themeColors = isDarkMode ? DARK_COLORS : LIGHT_COLORS;
+
+  // Update status bar appearance
+  useEffect(() => {
+    StatusBar.setBarStyle(isDarkMode ? 'light-content' : 'dark-content');
+    if (Platform.OS === 'android') {
+      StatusBar.setBackgroundColor(themeColors.background);
+    }
+  }, [isDarkMode, themeColors.background]);
+
+
+  // 1. Fetch Data Utama (Sensor Node dari Backend Arthur)
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
+      // Mengambil lokasi dan log terbaru dari API
       const [locations, logs] = await Promise.all([getLocations(), getLogs()]);
-      setNodes(buildNodes(locations || [], logs || []));
-    } catch {
+      
+      // Memproses data mentah menjadi bentuk Node menggunakan fungsi buildNodes
+      const processedNodes = buildNodes(locations || [], logs || []);
+      setNodes(processedNodes);
+    } catch (error) {
+      console.error("Gagal menyinkronkan data node:", error);
       setNodes([]);
     } finally {
       setLoading(false);
     }
   }, []);
 
+  // 2. Fetch Data Twitter (Hanya berjalan jika tombol diklik manual)
+  const fetchTweets = async () => {
+    setLoadingTweets(true);
+    try {
+      // Pastikan IP Tailscale Mac Anda benar di sini
+      const response = await axios.get('http://100.112.253.19:5678/webhook/get-live-tweets');
+      
+      if (response.data && Array.isArray(response.data)) {
+        setTweets(response.data);
+      } else {
+        setTweets([]);
+      }
+    } catch (error) {
+      console.log("Error mengambil tweets dari n8n:", error);
+      setTweets([
+        { id: 'err-1', username: 'Sistem', handle: '@RiverEye', text: 'Gagal mengambil laporan warga terbaru. Coba lagi nanti.', time: 'Now' }
+      ]);
+    } finally {
+      setLoadingTweets(false);
+    }
+  };
+
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
+  // Pull to refresh hanya memperbarui status sensor node, BUKAN twitter
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await fetchData();
     setRefreshing(false);
   }, [fetchData]);
 
-  // Menghitung statistik jaringan
+  // Statistik Jaringan
   const totalNodes = nodes.length;
   const dangerNodes = nodes.filter(n => n.status.risk === 'BAHAYA' || n.status.risk === 'WASPADA').length;
   const safeNodes = totalNodes - dangerNodes;
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={[styles.container, { backgroundColor: themeColors.background }]}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.loadingText}>Menyinkronkan Jaringan Node...</Text>
+          <ActivityIndicator size="large" color={themeColors.primary} />
+          <Text style={[styles.loadingText, { color: themeColors.textMuted }]}>Menyinkronkan Jaringan...</Text>
         </View>
       </SafeAreaView>
     );
   }
 
+  // Helper function for dynamic styles
+  const getDynamicStyles = (colors) => ({
+    cardBg: { backgroundColor: colors.cardBg },
+    textMain: { color: colors.textMain },
+    textMuted: { color: colors.textMuted },
+    borderColor: { borderColor: colors.border },
+    shadowColor: { shadowColor: colors.shadow },
+    summaryDivider: { backgroundColor: colors.border },
+    dangerText: { color: colors.danger },
+    safeText: { color: colors.safe },
+    primaryText: { color: colors.primary },
+    twitterBorder: { borderColor: colors.twitter + (isDarkMode ? '40' : '20') }, 
+    twitterShadow: { shadowColor: colors.twitter },
+    nodeIconBg: (color) => ({ backgroundColor: color + (isDarkMode ? '25' : '15') }), 
+    nodePillBg: (color) => ({ backgroundColor: color + (isDarkMode ? '25' : '15') }), 
+    hardwareBadgeBg: { backgroundColor: isDarkMode ? colors.border : colors.background },
+  });
+
+  const dynamicStyles = getDynamicStyles(themeColors);
+
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: themeColors.background }]}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[themeColors.primary]} tintColor={themeColors.primary} />
         }
       >
         
         {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>RiverEye Network</Text>
-          <Text style={styles.subHeader}>Sistem Manajemen Bencana Cerdas</Text>
-        </View>
-
-        {/* NETWORK OVERVIEW (Summary Cards) */}
-        <View style={styles.summaryRow}>
-          <View style={[styles.summaryCard, { backgroundColor: COLORS.primary + '10' }]}>
-            <Text style={[styles.summaryValue, { color: COLORS.primary }]}>{totalNodes}</Text>
-            <Text style={styles.summaryLabel}>Total Node</Text>
+        <View style={[styles.header, { justifyContent: 'space-between' }]}>
+          <View style={styles.brandContainer}>
+            <View style={styles.logoWrapper}>
+              <Image 
+                source={require('../assets/logo.png')} 
+                style={styles.logo}
+                resizeMode="cover" 
+              />
+            </View>
+            <View style={styles.brandTextContainer}>
+              <Text style={[styles.headerTitle, dynamicStyles.textMain]}>RiverEye</Text>
+              <Text style={[styles.subHeader, dynamicStyles.textMuted]}>Network Overview</Text>
+            </View>
           </View>
-          <View style={[styles.summaryCard, { backgroundColor: COLORS.danger + '10' }]}>
-            <Text style={[styles.summaryValue, { color: COLORS.danger }]}>{dangerNodes}</Text>
-            <Text style={styles.summaryLabel}>Perhatian</Text>
-          </View>
-          <View style={[styles.summaryCard, { backgroundColor: COLORS.safe + '10' }]}>
-            <Text style={[styles.summaryValue, { color: COLORS.safe }]}>{safeNodes}</Text>
-            <Text style={styles.summaryLabel}>Aman</Text>
-          </View>
-        </View>
-
-        {/* PRIORITY NODES (Daftar Node Kritis) */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Status Titik Pantau</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('Peta')}>
-            <Text style={styles.linkText}>Lihat Peta →</Text>
+          {/* Tombol Theme Toggle menggunakan fungsi dari Global Context */}
+          <TouchableOpacity onPress={toggleTheme} style={styles.themeButton}>
+            <Icon
+              name={isDarkMode ? 'sunny' : 'moon'}
+              size={24}
+              color={themeColors.textMain}
+            />
           </TouchableOpacity>
         </View>
 
-        {nodes.map((node) => (
+        {/* Unified Summary Panel */}
+        <View style={[styles.summaryPanel, dynamicStyles.cardBg, dynamicStyles.shadowColor]}>
+          <View style={styles.summaryCol}>
+            <Text style={[styles.summaryValue, dynamicStyles.textMain]}>{totalNodes}</Text>
+            <Text style={[styles.summaryLabel, dynamicStyles.textMuted]}>Total Node</Text>
+          </View>
+          <View style={[styles.summaryDivider, dynamicStyles.summaryDivider]} />
+          <View style={styles.summaryCol}>
+            <Text style={[styles.summaryValue, dynamicStyles.dangerText]}>{dangerNodes}</Text>
+            <Text style={[styles.summaryLabel, dynamicStyles.textMuted]}>Perhatian</Text>
+          </View>
+          <View style={[styles.summaryDivider, dynamicStyles.summaryDivider]} />
+          <View style={styles.summaryCol}>
+            <Text style={[styles.summaryValue, dynamicStyles.safeText]}>{safeNodes}</Text>
+            <Text style={[styles.summaryLabel, dynamicStyles.textMuted]}>Aman</Text>
+          </View>
+        </View>
+
+        {/* --- SECTION: Twitter Live Feeds (Manual Fetch) --- */}
+        <View style={styles.sectionHeader}>
+          <View style={styles.sectionTitleRow}>
+            <Text style={[styles.sectionTitle, dynamicStyles.textMain]}>Laporan Warga</Text>
+            {tweets.length > 0 && (
+              <View style={[styles.liveBadge, { backgroundColor: themeColors.danger + '20' }]}>
+                <View style={[styles.pulseDot, { backgroundColor: themeColors.danger }]} />
+                <Text style={[styles.liveBadgeText, dynamicStyles.dangerText]}>LIVE</Text>
+              </View>
+            )}
+          </View>
+          
+          {/* Tombol Refresh Khusus Tweet */}
           <TouchableOpacity 
-            key={node.id} 
-            style={[styles.nodeCard, { borderColor: node.status.color + '30', borderWidth: 1 }]}
-            activeOpacity={0.7}
-            onPress={() => navigation.navigate('Peta')} // Sementara arahkan ke peta
+            onPress={fetchTweets} 
+            disabled={loadingTweets}
+            style={[styles.refreshIconBtn, { backgroundColor: themeColors.twitter + '20' }, loadingTweets && styles.refreshIconBtnDisabled]}
           >
-            <View style={styles.nodeHeader}>
-              <View>
-                <Text style={styles.nodeName}>{node.name}</Text>
-                <Text style={styles.nodeId}>ID: {node.id}</Text>
-              </View>
-              <View style={[styles.badge, { backgroundColor: node.status.color + '15' }]}>
-                <View style={[styles.dot, { backgroundColor: node.status.color }]} />
-                <Text style={[styles.badgeText, { color: node.status.color }]}>{node.status.risk}</Text>
-              </View>
-            </View>
-
-            <View style={styles.nodeFooter}>
-              <Text style={styles.nodeLevel}>{(node.status.level_cm / 100).toFixed(2)} <Text style={styles.unit}>Meter</Text></Text>
-              
-              {/* Indikator Hardware Tambahan (Modular) */}
-              <View style={styles.hardwareRow}>
-                {node.hardware.has_sensor && <Text style={styles.hardwareIcon}>💧 Sensor</Text>}
-                {node.hardware.has_camera && <Text style={styles.hardwareIcon}>📹 CCTV</Text>}
-              </View>
-            </View>
+            {loadingTweets ? (
+              <ActivityIndicator size="small" color={themeColors.twitter} />
+            ) : (
+              <>
+                <Icon name="sync" size={16} color={themeColors.twitter} style={styles.syncIcon} />
+                <Text style={[styles.refreshText, { color: themeColors.twitter }]}>Muat Terbaru</Text>
+              </>
+            )}
           </TouchableOpacity>
-        ))}
+        </View>
 
-        {/* Card: Peta Jaringan Keseluruhan */}
+        {/* Konten Laporan Warga */}
+        {tweets.length === 0 && !loadingTweets ? (
+          // Empty State jika pengguna belum menekan tombol refresh
+          <View style={[styles.emptyTweetContainer, dynamicStyles.cardBg, dynamicStyles.borderColor]}>
+            <Icon name="logo-twitter" size={32} color={themeColors.border} />
+            <Text style={[styles.emptyTweetText, dynamicStyles.textMuted]}>Ketuk "Muat Terbaru" untuk menarik laporan Twitter warga sekitar lokasi secara real-time via n8n.</Text>
+          </View>
+        ) : (
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.twitterScrollContainer}
+            decelerationRate="fast"
+            snapToInterval={280 + 16}
+          >
+            {tweets.map((tweet) => (
+              <View key={tweet.id} style={[styles.tweetCard, dynamicStyles.cardBg, dynamicStyles.twitterBorder, dynamicStyles.twitterShadow]}>
+                <View style={styles.tweetHeader}>
+                  <View>
+                    <Text style={[styles.tweetUsername, dynamicStyles.textMain]} numberOfLines={1}>{tweet.username}</Text>
+                    <Text style={[styles.tweetHandle, dynamicStyles.textMuted]}>{tweet.handle}</Text>
+                  </View>
+                  <Text style={[styles.tweetTime, dynamicStyles.textMuted]}>{tweet.time}</Text>
+                </View>
+                <Text style={[styles.tweetText, dynamicStyles.textMain]} numberOfLines={4}>{tweet.text}</Text>
+              </View>
+            ))}
+          </ScrollView>
+        )}
+
+        {/* Section: Titik Pantau */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Peta Jaringan</Text>
+          <Text style={[styles.sectionTitle, dynamicStyles.textMain]}>Status Titik Pantau</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Peta')} style={styles.linkButton}>
+            <Text style={[styles.linkText, dynamicStyles.primaryText]}>Lihat Semua</Text>
+            <Icon name="chevron-forward" size={14} color={themeColors.primary} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.nodesContainer}>
+          {nodes.length === 0 && !loading && (
+            <View style={{ alignItems: 'center', marginVertical: 20 }}>
+              <Text style={{ color: themeColors.textMuted, fontSize: 14 }}>Belum ada data titik pantau.</Text>
+            </View>
+          )}
+
+          {nodes.map((node) => (
+            <TouchableOpacity 
+              key={node.id} 
+              style={[styles.nodeWidget, dynamicStyles.cardBg, dynamicStyles.shadowColor]} 
+              activeOpacity={0.7}
+              onPress={() => navigation.navigate('Peta')} 
+            >
+              <View style={styles.nodeWidgetTop}>
+                <View style={styles.nodeWidgetLeft}>
+                  <View style={[styles.iconContainer, dynamicStyles.nodeIconBg(node.status.color)]}>
+                    <Icon name="location" size={18} color={node.status.color} />
+                  </View>
+                  <View style={styles.nodeTitleArea}>
+                    <Text style={[styles.nodeName, dynamicStyles.textMain]}>{node.name}</Text>
+                    <Text style={[styles.nodeId, dynamicStyles.textMuted]}>{node.id}</Text>
+                  </View>
+                </View>
+                <View style={[styles.statusPill, dynamicStyles.nodePillBg(node.status.color)]}>
+                  <View style={[styles.statusDot, { backgroundColor: node.status.color }]} />
+                  <Text style={[styles.statusText, { color: node.status.color }]}>{node.status.risk}</Text>
+                </View>
+              </View>
+
+              <View style={[styles.nodeWidgetBottom, { borderTopColor: themeColors.border }]}>
+                <View style={styles.metricArea}>
+                  <Text style={[styles.metricValue, dynamicStyles.textMain]}>{(node.status.level_cm / 100).toFixed(2)}</Text>
+                  <Text style={[styles.metricUnit, dynamicStyles.textMuted]}>Meter</Text>
+                </View>
+                
+                <View style={styles.hardwareGroup}>
+                  {node.hardware.has_sensor && (
+                    <View style={[styles.hardwareBadge, dynamicStyles.hardwareBadgeBg]}>
+                      <Icon name="water-outline" size={12} color={themeColors.textMuted} />
+                      <Text style={[styles.hardwareText, dynamicStyles.textMuted]}>Sensor</Text>
+                    </View>
+                  )}
+                  {node.hardware.has_camera && (
+                    <View style={[styles.hardwareBadge, dynamicStyles.hardwareBadgeBg]}>
+                      <Icon name="videocam-outline" size={12} color={themeColors.textMuted} />
+                      <Text style={[styles.hardwareText, dynamicStyles.textMuted]}>CCTV</Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Peta Jaringan */}
+        <View style={[styles.sectionHeader, { marginTop: 8 }]}>
+          <Text style={[styles.sectionTitle, dynamicStyles.textMain]}>Peta Jaringan</Text>
         </View>
         <TouchableOpacity 
-          style={styles.card} 
-          activeOpacity={0.7}
+          style={[styles.mapWidget, { backgroundColor: themeColors.border }, dynamicStyles.shadowColor]} 
+          activeOpacity={0.9}
           onPress={() => navigation.navigate('Peta')}
         >
-          <View style={styles.mediaBox} pointerEvents="none">
-            <MapView
-              provider={PROVIDER_GOOGLE}
-              style={styles.map}
-              initialRegion={{
-                latitude: nodes[0]?.coordinates.latitude ?? FALLBACK_REGION.latitude,
-                longitude: nodes[0]?.coordinates.longitude ?? FALLBACK_REGION.longitude,
-                latitudeDelta: 0.05,
-                longitudeDelta: 0.05,
-              }}
-              scrollEnabled={false}
-              zoomEnabled={false}
-            >
-              {nodes.map((loc) => (
-                <Marker
-                  key={loc.id}
-                  coordinate={loc.coordinates}
-                  pinColor={loc.status.color} // Warna pin sesuai status bahaya
-                />
-              ))}
-            </MapView>
+          <MapView
+            provider={PROVIDER_GOOGLE}
+            style={styles.map}
+            initialRegion={{
+              latitude: nodes[0]?.coordinates.latitude ?? FALLBACK_REGION.latitude,
+              longitude: nodes[0]?.coordinates.longitude ?? FALLBACK_REGION.longitude,
+              latitudeDelta: 0.05,
+              longitudeDelta: 0.05,
+            }}
+            scrollEnabled={false}
+            zoomEnabled={false}
+            pitchEnabled={false}
+            rotateEnabled={false}
+            customMapStyle={isDarkMode ? mapDarkStyle : []} 
+          >
+            {nodes.map((loc) => (
+              <Marker
+                key={loc.id}
+                coordinate={loc.coordinates}
+                pinColor={loc.status.color} 
+              />
+            ))}
+          </MapView>
+          <View style={styles.mapOverlay}>
+            <View style={[styles.mapOverlayButton, dynamicStyles.cardBg]}>
+              <Text style={[styles.mapOverlayText, dynamicStyles.primaryText]}>Buka Navigasi Peta</Text>
+              <Icon name="arrow-forward" size={16} color={themeColors.primary} />
+            </View>
           </View>
         </TouchableOpacity>
 
@@ -172,57 +378,264 @@ const DashboardScreen = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
+  container: { flex: 1 },
   scrollContent: { padding: 24, paddingBottom: 40 },
   
-  header: { marginBottom: 24, marginTop: 8 },
-  headerTitle: { fontSize: 32, fontWeight: '900', color: COLORS.textMain, letterSpacing: -1 },
-  subHeader: { fontSize: 15, fontWeight: '600', color: COLORS.textMuted, marginTop: 4 },
+  header: { marginBottom: 32, marginTop: 8, flexDirection: 'row', alignItems: 'center' },
+  brandContainer: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  logoWrapper: { width: 64, height: 64, marginRight: 16, justifyContent: 'center', alignItems: 'center' },
+  logo: { width: '100%', height: '100%' },
+  brandTextContainer: { justifyContent: 'center', flex: 1 },
+  headerTitle: { fontSize: 32, fontWeight: '900', letterSpacing: -0.5 },
+  subHeader: { fontSize: 14, fontWeight: '600', marginTop: 2, letterSpacing: 0.5 },
+  themeButton: { padding: 8 },
 
-  // Summary Cards
-  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 32 },
-  summaryCard: { flex: 1, padding: 16, borderRadius: 20, alignItems: 'center', marginHorizontal: 4 },
-  summaryValue: { fontSize: 28, fontWeight: '900', marginBottom: 4 },
-  summaryLabel: { fontSize: 12, fontWeight: '700', color: COLORS.textMuted, textTransform: 'uppercase' },
+  summaryPanel: { flexDirection: 'row', borderRadius: 24, paddingVertical: 20, paddingHorizontal: 16, marginBottom: 36, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.03, shadowRadius: 16, elevation: 2 },
+  summaryCol: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  summaryDivider: { width: 1, marginVertical: 4 },
+  summaryValue: { fontSize: 26, fontWeight: '800', marginBottom: 4 },
+  summaryLabel: { fontSize: 11, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
 
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 16, paddingHorizontal: 4 },
-  sectionTitle: { fontSize: 18, fontWeight: '800', color: COLORS.textMain },
-  linkText: { fontSize: 13, color: COLORS.primary, fontWeight: '700', marginBottom: 2 },
-
-  // Node Cards
-  nodeCard: { 
-    backgroundColor: COLORS.cardBg, 
-    borderRadius: 20, 
-    padding: 20, 
-    marginBottom: 16,
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.03,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-  nodeHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
-  nodeName: { fontSize: 16, fontWeight: '700', color: COLORS.textMain, marginBottom: 2 },
-  nodeId: { fontSize: 11, fontWeight: '700', color: COLORS.textMuted, letterSpacing: 0.5 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center' },
+  sectionTitle: { fontSize: 18, fontWeight: '800' },
+  liveBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, marginLeft: 10 },
+  pulseDot: { width: 6, height: 6, borderRadius: 3, marginRight: 4 },
+  liveBadgeText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
   
-  badge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
-  dot: { width: 6, height: 6, borderRadius: 3, marginRight: 6 },
-  badgeText: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+  linkButton: { flexDirection: 'row', alignItems: 'center' },
+  linkText: { fontSize: 13, fontWeight: '600', marginRight: 4 },
 
-  nodeFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.border, paddingTop: 16 },
-  nodeLevel: { fontSize: 24, fontWeight: '900', color: COLORS.textMain, letterSpacing: -1 },
-  unit: { fontSize: 14, fontWeight: '600', color: COLORS.textMuted },
-  
-  hardwareRow: { flexDirection: 'row' },
-  hardwareIcon: { fontSize: 11, fontWeight: '700', color: COLORS.textMuted, backgroundColor: COLORS.background, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, marginLeft: 8, overflow: 'hidden' },
+  refreshIconBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
+  refreshIconBtnDisabled: { opacity: 0.5 },
+  syncIcon: { marginRight: 4 },
+  refreshText: { fontSize: 12, fontWeight: '700' },
 
-  // General Card
-  card: { backgroundColor: COLORS.cardBg, borderRadius: 24, padding: 8, marginBottom: 24 },
-  mediaBox: { height: 180, backgroundColor: '#F1F5F9', borderRadius: 20, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
-  map: { flex: 1, width: '100%' },
+  emptyTweetContainer: { borderRadius: 20, padding: 24, alignItems: 'center', marginBottom: 24, borderWidth: 1, borderStyle: 'dashed' },
+  emptyTweetText: { fontSize: 13, textAlign: 'center', marginTop: 12, lineHeight: 20 },
+  twitterScrollContainer: { paddingBottom: 24 },
+  tweetCard: { width: 280, borderRadius: 20, padding: 16, marginRight: 16, borderWidth: 1, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 12, elevation: 2 },
+  tweetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
+  tweetUsername: { fontSize: 14, fontWeight: '700', maxWidth: 180 },
+  tweetHandle: { fontSize: 12, marginTop: 2 },
+  tweetTime: { fontSize: 12, fontWeight: '500' },
+  tweetText: { fontSize: 13, lineHeight: 20 },
+
+  nodesContainer: { marginBottom: 24 },
+  nodeWidget: { borderRadius: 20, padding: 16, marginBottom: 16, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.02, shadowRadius: 12, elevation: 1 },
+  nodeWidgetTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
+  nodeWidgetLeft: { flexDirection: 'row', alignItems: 'center' },
+  iconContainer: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  nodeTitleArea: { justifyContent: 'center' },
+  nodeName: { fontSize: 15, fontWeight: '700', marginBottom: 2 },
+  nodeId: { fontSize: 11, fontWeight: '500' },
+  statusPill: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
+  statusDot: { width: 6, height: 6, borderRadius: 3, marginRight: 6 },
+  statusText: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+  nodeWidgetBottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', borderTopWidth: 1, paddingTop: 16 },
+  metricArea: { flexDirection: 'row', alignItems: 'baseline' },
+  metricValue: { fontSize: 28, fontWeight: '800', letterSpacing: -1 },
+  metricUnit: { fontSize: 13, fontWeight: '600', marginLeft: 6 },
+  hardwareGroup: { flexDirection: 'row', gap: 6 },
+  hardwareBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 5, borderRadius: 6 },
+  hardwareText: { fontSize: 10, fontWeight: '600', marginLeft: 4 },
+
+  mapWidget: { height: 200, borderRadius: 24, overflow: 'hidden', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.04, shadowRadius: 16, elevation: 2 },
+  map: { flex: 1 },
+  mapOverlay: { position: 'absolute', bottom: 16, left: 0, right: 0, alignItems: 'center' },
+  mapOverlayButton: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 4 },
+  mapOverlayText: { fontSize: 13, fontWeight: '700', marginRight: 6 },
 
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 16, color: COLORS.textMuted, fontWeight: '500', fontSize: 15 },
+  loadingText: { marginTop: 16, fontWeight: '500', fontSize: 14 },
 });
+
+// Google Maps Dark Theme Style Json
+const mapDarkStyle = [
+  {
+    "elementType": "geometry",
+    "stylers": [
+      {
+        "color": "#212121"
+      }
+    ]
+  },
+  {
+    "elementType": "labels.icon",
+    "stylers": [
+      {
+        "visibility": "off"
+      }
+    ]
+  },
+  {
+    "elementType": "labels.text.fill",
+    "stylers": [
+      {
+        "color": "#757575"
+      }
+    ]
+  },
+  {
+    "elementType": "labels.text.stroke",
+    "stylers": [
+      {
+        "color": "#212121"
+      }
+    ]
+  },
+  {
+    "featureType": "administrative",
+    "elementType": "geometry",
+    "stylers": [
+      {
+        "color": "#757575"
+      }
+    ]
+  },
+  {
+    "featureType": "administrative.country",
+    "elementType": "labels.text.fill",
+    "stylers": [
+      {
+        "color": "#9e9e9e"
+      }
+    ]
+  },
+  {
+    "featureType": "administrative.land_parcel",
+    "stylers": [
+      {
+        "visibility": "off"
+      }
+    ]
+  },
+  {
+    "featureType": "administrative.locality",
+    "elementType": "labels.text.fill",
+    "stylers": [
+      {
+        "color": "#bdbdbd"
+      }
+    ]
+  },
+  {
+    "featureType": "poi",
+    "elementType": "labels.text.fill",
+    "stylers": [
+      {
+        "color": "#757575"
+      }
+    ]
+  },
+  {
+    "featureType": "poi.park",
+    "elementType": "geometry",
+    "stylers": [
+      {
+        "color": "#181818"
+      }
+    ]
+  },
+  {
+    "featureType": "poi.park",
+    "elementType": "labels.text.fill",
+    "stylers": [
+      {
+        "color": "#616161"
+      }
+    ]
+  },
+  {
+    "featureType": "poi.park",
+    "elementType": "labels.text.stroke",
+    "stylers": [
+      {
+        "color": "#1b1b1b"
+      }
+    ]
+  },
+  {
+    "featureType": "road",
+    "elementType": "geometry.fill",
+    "stylers": [
+      {
+        "color": "#2c2c2c"
+      }
+    ]
+  },
+  {
+    "featureType": "road",
+    "elementType": "labels.text.fill",
+    "stylers": [
+      {
+        "color": "#8a8a8a"
+      }
+    ]
+  },
+  {
+    "featureType": "road.arterial",
+    "elementType": "geometry",
+    "stylers": [
+      {
+        "color": "#373737"
+      }
+    ]
+  },
+  {
+    "featureType": "road.highway",
+    "elementType": "geometry",
+    "stylers": [
+      {
+        "color": "#3c3c3c"
+      }
+    ]
+  },
+  {
+    "featureType": "road.highway.controlled_access",
+    "elementType": "geometry",
+    "stylers": [
+      {
+        "color": "#4e4e4e"
+      }
+    ]
+  },
+  {
+    "featureType": "road.local",
+    "elementType": "labels.text.fill",
+    "stylers": [
+      {
+        "color": "#616161"
+      }
+    ]
+  },
+  {
+    "featureType": "transit",
+    "elementType": "labels.text.fill",
+    "stylers": [
+      {
+        "color": "#757575"
+      }
+    ]
+  },
+  {
+    "featureType": "water",
+    "elementType": "geometry",
+    "stylers": [
+      {
+        "color": "#000000"
+      }
+    ]
+  },
+  {
+    "featureType": "water",
+    "elementType": "labels.text.fill",
+    "stylers": [
+      {
+        "color": "#3d3d3d"
+      }
+    ]
+  }
+];
 
 export default DashboardScreen;

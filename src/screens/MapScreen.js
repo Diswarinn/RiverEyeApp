@@ -1,14 +1,19 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo, useContext } from 'react';
 import {
   View, StyleSheet, Text, TextInput, TouchableOpacity, StatusBar,
   PermissionsAndroid, Platform, ActivityIndicator, Alert, ScrollView, Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import Icon from 'react-native-vector-icons/Ionicons';
 import { getLocations, getLogs } from '../config/apiClient';
 import { buildNodes } from '../config/nodes';
 
-const COLORS = {
+// Mengambil Global State Theme
+import { ThemeContext } from '../context/ThemeContext';
+
+// Palet warna premium (Ultra-Clean Slate & Sky UI) - Light Mode
+const LIGHT_COLORS = {
   background: '#F8FAFC',
   cardBg: '#FFFFFF',
   textMain: '#0F172A',
@@ -18,6 +23,21 @@ const COLORS = {
   safe: '#10B981',
   warning: '#F59E0B',
   danger: '#EF4444',
+  shadow: '#0F172A',
+};
+
+// Palet warna premium - Dark Mode
+const DARK_COLORS = {
+  background: '#0F172A', 
+  cardBg: '#1E293B',    
+  textMain: '#F8FAFC',   
+  textMuted: '#94A3B8',  
+  border: '#334155',     
+  primary: '#38BDF8',    
+  safe: '#34D399',       
+  warning: '#FBBF24',    
+  danger: '#F87171',     
+  shadow: '#000000',     
 };
 
 const FALLBACK_LOCATION = { latitude: -7.2950, longitude: 112.7920 };
@@ -26,7 +46,6 @@ const GOOGLE_DIRECTIONS_KEY = 'AIzaSyAU6Jm-3VtWsL7NtZ8WJoJCPT-xD4HGZvo';
 // Batasi rekomendasi pencarian hanya di sekitar Surabaya
 const SURABAYA_CENTER = { latitude: -7.2575, longitude: 112.7521 };
 const SEARCH_RADIUS_M = 30000;
-// viewbox Nominatim: lon1,lat1,lon2,lat2 (dua sudut kotak sekitar Surabaya)
 const SURABAYA_VIEWBOX = '112.40,-6.90,113.10,-7.60';
 
 const decodePolyline = (encoded) => {
@@ -87,7 +106,6 @@ const requestLocationPermission = async () => {
   return result === PermissionsAndroid.RESULTS.GRANTED;
 };
 
-// Pencarian tempat dibatasi sekitar Surabaya (Google Places + Nominatim)
 const fetchPlaceSuggestions = async (text) => {
   const [gResult, nResult] = await Promise.allSettled([
     fetch(
@@ -135,8 +153,6 @@ const fetchPlaceSuggestions = async (text) => {
   return combined.slice(0, 7);
 };
 
-// Warna garis rute per-indeks (aktif vs tidak)
-const ROUTE_COLORS = [COLORS.primary, COLORS.safe, '#8B5CF6'];
 const ROUTE_LABELS = ['Rute Utama', 'Alternatif 1', 'Alternatif 2'];
 
 const MapScreen = ({ navigation }) => {
@@ -146,27 +162,19 @@ const MapScreen = ({ navigation }) => {
   const searchTimerRef = useRef(null);
   const originTimerRef = useRef(null);
 
+  // MENGGUNAKAN GLOBAL THEME CONTEXT
+  const { isDarkMode } = useContext(ThemeContext);
+  const themeColors = isDarkMode ? DARK_COLORS : LIGHT_COLORS;
+  
+  const styles = useMemo(() => getStyles(themeColors, isDarkMode), [themeColors, isDarkMode]);
+  const routeColors = useMemo(() => [themeColors.primary, themeColors.safe, '#8B5CF6'], [themeColors]);
+
   const [nodes, setNodes] = useState([]);
   const [selectedNode, setSelectedNode] = useState(null);
   const [isRoutingMode, setIsRoutingMode] = useState(false);
   const [origin, setOrigin] = useState(null);
   const [destination, setDestination] = useState(null);
 
-  // Ambil node/titik pantau dari backend (dikelola lewat web admin)
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const [locations, logs] = await Promise.all([getLocations(), getLogs()]);
-        if (active) setNodes(buildNodes(locations || [], logs || []));
-      } catch {
-        if (active) setNodes([]);
-      }
-    })();
-    return () => { active = false; };
-  }, []);
-
-  // Array semua rute: { coords, distance, duration, isSafe, warnings }
   const [allRoutes, setAllRoutes] = useState([]);
   const [activeRouteIdx, setActiveRouteIdx] = useState(0);
   const [showWarningCard, setShowWarningCard] = useState(false);
@@ -184,6 +192,28 @@ const MapScreen = ({ navigation }) => {
   const dangerCount = nodes.filter(n => n.status.risk === 'BAHAYA').length;
   const activeRoute = allRoutes[activeRouteIdx] ?? null;
 
+  useEffect(() => {
+    StatusBar.setBarStyle(isDarkMode ? 'light-content' : 'dark-content');
+    if (Platform.OS === 'android') {
+      // Untuk MapScreen, kita ingin status bar transparan agar peta terlihat penuh
+      StatusBar.setBackgroundColor('transparent');
+      StatusBar.setTranslucent(true);
+    }
+  }, [isDarkMode]);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const [locations, logs] = await Promise.all([getLocations(), getLogs()]);
+        if (active) setNodes(buildNodes(locations || [], logs || []));
+      } catch {
+        if (active) setNodes([]);
+      }
+    })();
+    return () => { active = false; };
+  }, []);
+
   const handleUserLocationChange = useCallback((event) => {
     const { coordinate } = event.nativeEvent;
     if (coordinate) {
@@ -191,7 +221,6 @@ const MapScreen = ({ navigation }) => {
     }
   }, []);
 
-  // Tunggu fix GPS asli dari peta, polling hingga timeout (bukan delay buta)
   const waitForUserLocation = useCallback((timeoutMs = 12000) =>
     new Promise((resolve) => {
       const start = Date.now();
@@ -298,7 +327,6 @@ const MapScreen = ({ navigation }) => {
 
       let parsed = null;
 
-      // Coba Google Maps Directions API terlebih dahulu
       try {
         const gRes = await fetch(
           `https://maps.googleapis.com/maps/api/directions/json` +
@@ -321,9 +349,8 @@ const MapScreen = ({ navigation }) => {
             };
           });
         }
-      } catch { /* Google gagal, lanjut ke fallback */ }
+      } catch { }
 
-      // Fallback OSRM jika Google ditolak atau gagal
       if (!parsed) {
         const oRes = await fetch(
           `https://router.project-osrm.org/route/v1/driving/` +
@@ -348,10 +375,8 @@ const MapScreen = ({ navigation }) => {
       setAllRoutes(parsed);
       setActiveRouteIdx(0);
 
-      // Tampilkan warning card jika rute utama berbahaya
       if (!parsed[0].isSafe) setShowWarningCard(true);
 
-      // Fit peta ke rute utama
       mapRef.current?.fitToCoordinates(parsed[0].coords, {
         edgePadding: { top: 260, right: 40, bottom: 200, left: 40 },
         animated: true,
@@ -437,7 +462,6 @@ const MapScreen = ({ navigation }) => {
     setIsLoadingLocation(false);
   }, [resetRouteState, waitForUserLocation]);
 
-  // Minta izin lokasi; jika diblokir arahkan ke Pengaturan, lalu coba ambil GPS lagi
   const enableLocation = useCallback(async () => {
     if (Platform.OS !== 'android') { retriggerGPS(); return; }
     const status = await PermissionsAndroid.request(
@@ -464,7 +488,6 @@ const MapScreen = ({ navigation }) => {
     retriggerGPS();
   }, [retriggerGPS]);
 
-  // Buka pengaturan lokasi perangkat (untuk menyalakan GPS yang mati)
   const openDeviceLocationSettings = useCallback(() => {
     Linking.sendIntent('android.settings.LOCATION_SOURCE_SETTINGS').catch(() => Linking.openSettings());
   }, []);
@@ -495,14 +518,12 @@ const MapScreen = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" />
-
       <MapView
         ref={mapRef}
         provider={PROVIDER_GOOGLE}
         style={styles.map}
         initialRegion={{ latitude: -7.2800, longitude: 112.7950, latitudeDelta: 0.04, longitudeDelta: 0.04 }}
-        customMapStyle={mapStyle}
+        customMapStyle={isDarkMode ? mapDarkStyle : mapLightStyle}
         showsUserLocation
         showsMyLocationButton={false}
         onUserLocationChange={handleUserLocationChange}
@@ -531,19 +552,18 @@ const MapScreen = ({ navigation }) => {
         {destination && (
           <Marker coordinate={destination.coordinates} anchor={{ x: 0.5, y: 1 }}>
             <View style={styles.destMarkerWrapper}>
-              <View style={[styles.destMarker, { backgroundColor: COLORS.primary }]}>
+              <View style={[styles.destMarker, { backgroundColor: themeColors.primary }]}>
                 <Text style={styles.destMarkerIcon}>📍</Text>
               </View>
             </View>
           </Marker>
         )}
 
-        {/* Render rute tidak aktif dulu (di belakang), aktif terakhir (di depan) */}
         {allRoutes.map((route, idx) => idx !== activeRouteIdx && (
           <Polyline
             key={`route-${idx}`}
             coordinates={route.coords}
-            strokeColor={route.isSafe ? ROUTE_COLORS[idx] + 'AA' : COLORS.warning + '88'}
+            strokeColor={route.isSafe ? routeColors[idx] + 'AA' : themeColors.warning + '88'}
             strokeWidth={3}
             lineDashPattern={route.isSafe ? undefined : [10, 6]}
           />
@@ -552,7 +572,7 @@ const MapScreen = ({ navigation }) => {
           <Polyline
             key="route-active"
             coordinates={activeRoute.coords}
-            strokeColor={activeRoute.isSafe ? ROUTE_COLORS[activeRouteIdx] : COLORS.warning}
+            strokeColor={activeRoute.isSafe ? routeColors[activeRouteIdx] : themeColors.warning}
             strokeWidth={5}
             lineDashPattern={activeRoute.isSafe ? undefined : [10, 6]}
           />
@@ -564,15 +584,18 @@ const MapScreen = ({ navigation }) => {
         <View style={styles.routingCard}>
           <View style={styles.routingHeader}>
             <Text style={styles.routingTitle}>Smart Routing Bencana</Text>
-            {!isRoutingMode ? (
-              <TouchableOpacity style={styles.routeToggleBtn} onPress={activateRouting}>
-                <Text style={styles.routeToggleText}>Cari Rute Aman</Text>
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity style={[styles.routeToggleBtn, styles.routeToggleCancel]} onPress={cancelRouting}>
-                <Text style={[styles.routeToggleText, { color: '#FFF' }]}>Batalkan</Text>
-              </TouchableOpacity>
-            )}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              {/* Tombol Theme Toggle DIHAPUS DARI SINI KARENA PINDAH KE DASHBOARD */}
+              {!isRoutingMode ? (
+                <TouchableOpacity style={styles.routeToggleBtn} onPress={activateRouting}>
+                  <Text style={styles.routeToggleText}>Cari Rute Aman</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity style={[styles.routeToggleBtn, styles.routeToggleCancel]} onPress={cancelRouting}>
+                  <Text style={[styles.routeToggleText, { color: '#FFF' }]}>Batalkan</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
 
           {isRoutingMode && (
@@ -582,16 +605,16 @@ const MapScreen = ({ navigation }) => {
                 <TextInput
                   style={styles.destTextInput}
                   placeholder={isLoadingLocation ? 'Memuat lokasi GPS...' : 'Ketik lokasi awal...'}
-                  placeholderTextColor={COLORS.textMuted}
+                  placeholderTextColor={themeColors.textMuted}
                   value={originQuery}
                   onChangeText={handleOriginChange}
                   editable={!isLoadingLocation}
                   returnKeyType="search"
                 />
                 {isLoadingLocation
-                  ? <ActivityIndicator size="small" color={COLORS.primary} style={{ marginLeft: 8 }} />
+                  ? <ActivityIndicator size="small" color={themeColors.primary} style={{ marginLeft: 8 }} />
                   : isSearchingOrigin
-                    ? <ActivityIndicator size="small" color={COLORS.textMuted} style={{ marginLeft: 8 }} />
+                    ? <ActivityIndicator size="small" color={themeColors.textMuted} style={{ marginLeft: 8 }} />
                     : (
                       <TouchableOpacity onPress={retriggerGPS} style={styles.gpsChip}>
                         <Text style={styles.gpsChipText}>📡 GPS</Text>
@@ -645,14 +668,14 @@ const MapScreen = ({ navigation }) => {
                 <TextInput
                   style={styles.destTextInput}
                   placeholder="Ketik tujuan..."
-                  placeholderTextColor={COLORS.textMuted}
+                  placeholderTextColor={themeColors.textMuted}
                   value={searchQuery}
                   onChangeText={handleSearchChange}
                   editable={!isLoadingLocation && !isLoadingRoute}
                   returnKeyType="search"
                 />
                 {(isSearching || isLoadingRoute) && (
-                  <ActivityIndicator size="small" color={COLORS.primary} style={{ marginLeft: 8 }} />
+                  <ActivityIndicator size="small" color={themeColors.primary} style={{ marginLeft: 8 }} />
                 )}
               </View>
 
@@ -680,10 +703,9 @@ const MapScreen = ({ navigation }) => {
                 </View>
               )}
 
-              {/* Info rute aktif */}
               {activeRoute && !isLoadingRoute && (
-                <View style={[styles.routeInfoRow, { borderTopColor: activeRoute.isSafe ? COLORS.border : COLORS.warning + '40' }]}>
-                  <Text style={[styles.routeInfoText, { color: activeRoute.isSafe ? COLORS.safe : COLORS.warning }]}>
+                <View style={[styles.routeInfoRow, { borderTopColor: activeRoute.isSafe ? themeColors.border : themeColors.warning + '40' }]}>
+                  <Text style={[styles.routeInfoText, { color: activeRoute.isSafe ? themeColors.safe : themeColors.warning }]}>
                     {activeRoute.isSafe ? '✅' : '⚠️'} {ROUTE_LABELS[activeRouteIdx]} · {activeRoute.distance} · {activeRoute.duration}
                   </Text>
                 </View>
@@ -700,7 +722,6 @@ const MapScreen = ({ navigation }) => {
       {showWarningCard && allRoutes.length > 0 && !allRoutes[0].isSafe && (
         <View style={styles.warningCard}>
           <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
-            {/* Header */}
             <View style={styles.warningCardHeader}>
               <View style={styles.warningTitleRow}>
                 <View style={styles.warningIconBg}>
@@ -716,7 +737,6 @@ const MapScreen = ({ navigation }) => {
               </TouchableOpacity>
             </View>
 
-            {/* Node BAHAYA di dekat rute utama */}
             <View style={styles.warningDivider} />
             {allRoutes[0].warnings.map(node => (
               <View key={node.id} style={styles.warningNodeRow}>
@@ -726,13 +746,12 @@ const MapScreen = ({ navigation }) => {
               </View>
             ))}
 
-            {/* Pilihan semua rute */}
             <View style={styles.warningDivider} />
             <Text style={styles.altSectionTitle}>Pilih Rute</Text>
 
             {allRoutes.map((route, idx) => {
               const isActive = idx === activeRouteIdx;
-              const lineColor = route.isSafe ? ROUTE_COLORS[idx] : COLORS.warning;
+              const lineColor = route.isSafe ? routeColors[idx] : themeColors.warning;
               return (
                 <TouchableOpacity
                   key={idx}
@@ -752,8 +771,8 @@ const MapScreen = ({ navigation }) => {
                           </View>
                         )}
                       </View>
-                      <View style={[styles.altSafeBadge, { backgroundColor: route.isSafe ? COLORS.safe + '15' : COLORS.warning + '15' }]}>
-                        <Text style={[styles.altSafeBadgeText, { color: route.isSafe ? COLORS.safe : COLORS.warning }]}>
+                      <View style={[styles.altSafeBadge, { backgroundColor: route.isSafe ? themeColors.safe + '15' : themeColors.warning + '15' }]}>
+                        <Text style={[styles.altSafeBadgeText, { color: route.isSafe ? themeColors.safe : themeColors.warning }]}>
                           {route.isSafe ? '✅ Aman' : '⚠️ Bahaya'}
                         </Text>
                       </View>
@@ -824,11 +843,8 @@ const MapScreen = ({ navigation }) => {
   );
 };
 
-const mapStyle = [
-  { featureType: 'poi', elementType: 'labels.text', stylers: [{ visibility: 'off' }] },
-];
-
-const styles = StyleSheet.create({
+// Fungsi Dinamis untuk membuat Style menyesuaikan Theme Colors
+const getStyles = (COLORS, isDarkMode) => StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   map: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
 
@@ -854,7 +870,7 @@ const styles = StyleSheet.create({
   routingCard: {
     marginHorizontal: 20, marginTop: 16, padding: 16,
     backgroundColor: COLORS.cardBg, borderRadius: 20,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
+    shadowColor: COLORS.shadow, shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.1, shadowRadius: 12, elevation: 5,
   },
   routingHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -907,12 +923,12 @@ const styles = StyleSheet.create({
   routeInfoRow: { marginTop: 10, paddingTop: 10, borderTopWidth: 1 },
   routeInfoText: { fontSize: 13, fontWeight: '700' },
 
-  // Warning Card — kompak
+  // Warning Card
   warningCard: {
     position: 'absolute', bottom: 28, left: 20, right: 20,
     maxHeight: '38%',
     backgroundColor: COLORS.cardBg, borderRadius: 18, padding: 12,
-    shadowColor: '#0F172A', shadowOffset: { width: 0, height: 8 },
+    shadowColor: COLORS.shadow, shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.12, shadowRadius: 16, elevation: 12, zIndex: 30,
     borderWidth: 1.5, borderColor: COLORS.warning + '40',
   },
@@ -967,7 +983,7 @@ const styles = StyleSheet.create({
   bottomSheet: {
     position: 'absolute', bottom: 32, left: 20, right: 20,
     backgroundColor: COLORS.cardBg, borderRadius: 24, padding: 24,
-    shadowColor: '#0F172A', shadowOffset: { width: 0, height: 12 },
+    shadowColor: COLORS.shadow, shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.15, shadowRadius: 20, elevation: 10, zIndex: 20,
   },
   sheetHandle: { width: 40, height: 4, backgroundColor: COLORS.border, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
@@ -991,7 +1007,7 @@ const styles = StyleSheet.create({
   hardwareRow: { flexDirection: 'column', gap: 6, marginTop: 4 },
   hwIcon: {
     fontSize: 12, fontWeight: '700', color: COLORS.textMuted,
-    backgroundColor: COLORS.background, paddingHorizontal: 8, paddingVertical: 4,
+    backgroundColor: isDarkMode ? COLORS.border : COLORS.background, paddingHorizontal: 8, paddingVertical: 4,
     borderRadius: 6, overflow: 'hidden', alignSelf: 'flex-start',
   },
 
@@ -1003,5 +1019,35 @@ const styles = StyleSheet.create({
   disabledButton: { flex: 1, backgroundColor: COLORS.border, paddingVertical: 14, borderRadius: 16, alignItems: 'center' },
   disabledButtonText: { color: COLORS.textMuted, fontSize: 14, fontWeight: '700' },
 });
+
+const mapLightStyle = [
+  { featureType: 'poi', elementType: 'labels.text', stylers: [{ visibility: 'off' }] },
+];
+
+// Google Maps Dark Theme Style Json
+const mapDarkStyle = [
+  { "featureType": "poi", "elementType": "labels.text", "stylers": [{ "visibility": "off" }] },
+  { "elementType": "geometry", "stylers": [{ "color": "#212121" }] },
+  { "elementType": "labels.icon", "stylers": [{ "visibility": "off" }] },
+  { "elementType": "labels.text.fill", "stylers": [{ "color": "#757575" }] },
+  { "elementType": "labels.text.stroke", "stylers": [{ "color": "#212121" }] },
+  { "featureType": "administrative", "elementType": "geometry", "stylers": [{ "color": "#757575" }] },
+  { "featureType": "administrative.country", "elementType": "labels.text.fill", "stylers": [{ "color": "#9e9e9e" }] },
+  { "featureType": "administrative.land_parcel", "stylers": [{ "visibility": "off" }] },
+  { "featureType": "administrative.locality", "elementType": "labels.text.fill", "stylers": [{ "color": "#bdbdbd" }] },
+  { "featureType": "poi", "elementType": "labels.text.fill", "stylers": [{ "color": "#757575" }] },
+  { "featureType": "poi.park", "elementType": "geometry", "stylers": [{ "color": "#181818" }] },
+  { "featureType": "poi.park", "elementType": "labels.text.fill", "stylers": [{ "color": "#616161" }] },
+  { "featureType": "poi.park", "elementType": "labels.text.stroke", "stylers": [{ "color": "#1b1b1b" }] },
+  { "featureType": "road", "elementType": "geometry.fill", "stylers": [{ "color": "#2c2c2c" }] },
+  { "featureType": "road", "elementType": "labels.text.fill", "stylers": [{ "color": "#8a8a8a" }] },
+  { "featureType": "road.arterial", "elementType": "geometry", "stylers": [{ "color": "#373737" }] },
+  { "featureType": "road.highway", "elementType": "geometry", "stylers": [{ "color": "#3c3c3c" }] },
+  { "featureType": "road.highway.controlled_access", "elementType": "geometry", "stylers": [{ "color": "#4e4e4e" }] },
+  { "featureType": "road.local", "elementType": "labels.text.fill", "stylers": [{ "color": "#616161" }] },
+  { "featureType": "transit", "elementType": "labels.text.fill", "stylers": [{ "color": "#757575" }] },
+  { "featureType": "water", "elementType": "geometry", "stylers": [{ "color": "#000000" }] },
+  { "featureType": "water", "elementType": "labels.text.fill", "stylers": [{ "color": "#3d3d3d" }] }
+];
 
 export default MapScreen;

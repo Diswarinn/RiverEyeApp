@@ -1,15 +1,19 @@
-import React from 'react';
+import React, { useContext } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import Icon from 'react-native-vector-icons/Ionicons'; // Pastikan library ini sudah terinstall
+import Icon from 'react-native-vector-icons/Ionicons'; 
+import { SafeAreaProvider } from 'react-native-safe-area-context'; 
 
-// Import Screens (Pastikan ekstensi file screen-nya juga sudah sesuai dengan project Anda, e.g. .tsx atau .js)
+// Import Screens
 import DashboardScreen from './src/screens/DashboardScreen';
 import MapScreen from './src/screens/MapScreen';
 import CameraScreen from './src/screens/CameraScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
 
-// 1. Definisikan tipe untuk parameter navigasi agar TypeScript tidak protes
+// Import Theme Context
+import { ThemeProvider, ThemeContext } from './src/context/ThemeContext';
+
+// 1. Definisikan tipe untuk parameter navigasi
 type RootTabParamList = {
   Beranda: undefined;
   Peta: undefined;
@@ -19,69 +23,92 @@ type RootTabParamList = {
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
 
-// 2. Palet warna agar sinkron dengan UI "Slate & Sky" layar lain
-const COLORS = {
+// 2. Palet warna dinamis untuk Tab Bar
+const LIGHT_COLORS = {
   primary: '#0EA5E9',    // Sky 500 (Aktif)
   inactive: '#94A3B8',   // Slate 400 (Tidak Aktif)
-  background: '#FFFFFF', 
+  background: '#FFFFFF', // Putih bersih
+  shadow: '#0F172A',
 };
 
+const DARK_COLORS = {
+  primary: '#38BDF8',    // Sky 400 (Aktif, lebih terang di dark mode)
+  inactive: '#64748B',   // Slate 500 (Tidak Aktif)
+  background: '#1E293B', // Slate 800 (Gelap elegan)
+  shadow: '#000000',
+};
+
+// 3. Komponen Navigator yang dibungkus agar bisa membaca ThemeContext
+function MainNavigator() {
+  const themeContext = useContext(ThemeContext);
+  
+  // Mencegah crash jika ThemeContext belum termuat sempurna
+  const isDarkMode = themeContext?.isDarkMode || false; 
+  const themeColors = isDarkMode ? DARK_COLORS : LIGHT_COLORS;
+
+  return (
+    <Tab.Navigator
+      screenOptions={({ route }) => ({
+        headerShown: false, 
+        
+        tabBarIcon: ({ focused, color }) => {
+          let iconName = 'help-outline'; 
+
+          if (route.name === 'Beranda') {
+            iconName = focused ? 'home' : 'home-outline';
+          } else if (route.name === 'Peta') {
+            iconName = focused ? 'map' : 'map-outline';
+          } else if (route.name === 'Kamera') {
+            iconName = focused ? 'videocam' : 'videocam-outline';
+          } else if (route.name === 'Riwayat') {
+            iconName = focused ? 'bar-chart' : 'bar-chart-outline';
+          }
+
+          return <Icon name={iconName} size={focused ? 26 : 24} color={color} />;
+        },
+        
+        tabBarActiveTintColor: themeColors.primary,
+        tabBarInactiveTintColor: themeColors.inactive,
+        tabBarStyle: {
+          backgroundColor: themeColors.background,
+          borderTopWidth: 0, 
+          elevation: 15, 
+          shadowColor: themeColors.shadow, 
+          shadowOffset: { width: 0, height: -4 },
+          shadowOpacity: isDarkMode ? 0.3 : 0.05, 
+          shadowRadius: 12,
+          height: 85, 
+          paddingBottom: 24, 
+          paddingTop: 12,
+        },
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '700',
+          marginTop: 4,
+        },
+        tabBarItemStyle: {
+          borderRadius: 10,
+        }
+      })}
+    >
+      <Tab.Screen name="Beranda" component={DashboardScreen} />
+      <Tab.Screen name="Peta" component={MapScreen} />
+      <Tab.Screen name="Kamera" component={CameraScreen} />
+      <Tab.Screen name="Riwayat" component={HistoryScreen} />
+    </Tab.Navigator>
+  );
+}
+
+// 4. Komponen App Utama yang membungkus seluruh aplikasi dengan Provider
 export default function App() {
   return (
-    <NavigationContainer>
-      <Tab.Navigator
-        screenOptions={({ route }) => ({
-          headerShown: false, // Sembunyikan header bawaan navigasi
-          
-          // 3. Konfigurasi Ikon Dinamis
-          tabBarIcon: ({ focused, color }) => {
-            let iconName = 'help-outline'; // Default icon jika terjadi kesalahan type
-
-            if (route.name === 'Beranda') {
-              iconName = focused ? 'home' : 'home-outline';
-            } else if (route.name === 'Peta') {
-              iconName = focused ? 'map' : 'map-outline';
-            } else if (route.name === 'Kamera') {
-              iconName = focused ? 'videocam' : 'videocam-outline';
-            } else if (route.name === 'Riwayat') {
-              iconName = focused ? 'bar-chart' : 'bar-chart-outline';
-            }
-
-            // Sedikit memperbesar ukuran ikon saat aktif agar lebih interaktif
-            return <Icon name={iconName} size={focused ? 26 : 24} color={color} />;
-          },
-          
-          // 4. Styling Premium Tab Bar
-          tabBarActiveTintColor: COLORS.primary,
-          tabBarInactiveTintColor: COLORS.inactive,
-          tabBarStyle: {
-            backgroundColor: COLORS.background,
-            borderTopWidth: 0, // Menghilangkan garis abu-abu kaku di atas tab
-            elevation: 15, // Shadow lembut untuk Android
-            shadowColor: '#0F172A', // Shadow premium untuk iOS
-            shadowOffset: { width: 0, height: -4 },
-            shadowOpacity: 0.05,
-            shadowRadius: 12,
-            height: 85, // Ditingkatkan dari 70 agar ada ruang untuk gesture bar
-            paddingBottom: 24, // Ruang ekstra di bawah agar ikon naik menjauhi garis HP
-            paddingTop: 12,
-          },
-          tabBarLabelStyle: {
-            fontSize: 11,
-            fontWeight: '700',
-            marginTop: 4,
-          },
-          // Efek visual saat tab ditekan (Android Ripple Effect bounds)
-          tabBarItemStyle: {
-            borderRadius: 10,
-          }
-        })}
-      >
-        <Tab.Screen name="Beranda" component={DashboardScreen} />
-        <Tab.Screen name="Peta" component={MapScreen} />
-        <Tab.Screen name="Kamera" component={CameraScreen} />
-        <Tab.Screen name="Riwayat" component={HistoryScreen} />
-      </Tab.Navigator>
-    </NavigationContainer>
+    // Tambahkan style flex 1 agar memastikan layar tidak menciut menjadi 0px
+    <SafeAreaProvider style={{ flex: 1 }}>
+      <ThemeProvider>
+        <NavigationContainer>
+          <MainNavigator />
+        </NavigationContainer>
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 }

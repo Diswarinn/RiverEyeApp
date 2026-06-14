@@ -1,10 +1,14 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, SafeAreaView, StatusBar, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect, useCallback, useContext, useMemo } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator, SafeAreaView, StatusBar, TouchableOpacity, Platform } from 'react-native';
 import Video from 'react-native-video';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { getLocations } from '../config/apiClient';
 
-const COLORS = {
+// Import Global Theme Context
+import { ThemeContext } from '../context/ThemeContext';
+
+// Palet warna premium - Light Mode
+const LIGHT_COLORS = {
   background: '#F8FAFC',
   cardBg: '#FFFFFF',
   textMain: '#0F172A',
@@ -12,6 +16,19 @@ const COLORS = {
   border: '#E2E8F0',
   primary: '#0EA5E9',
   danger: '#EF4444',
+  shadow: '#0F172A',
+};
+
+// Palet warna premium - Dark Mode
+const DARK_COLORS = {
+  background: '#0F172A', 
+  cardBg: '#1E293B',    
+  textMain: '#F8FAFC',   
+  textMuted: '#94A3B8',  
+  border: '#334155',     
+  primary: '#38BDF8',    
+  danger: '#F87171',     
+  shadow: '#000000',     
 };
 
 // Stream cadangan jika node belum punya cctv_url dari backend
@@ -34,6 +51,13 @@ const CameraScreen = ({ route, navigation }) => {
   const [isBuffering, setIsBuffering] = useState(true);
   const [videoError, setVideoError] = useState(false);
   const [refreshKey, setRefreshKey] = useState(Date.now());
+
+  // MENGAMBIL STATE DARI GLOBAL CONTEXT
+  const themeContext = useContext(ThemeContext);
+  const isDarkMode = themeContext?.isDarkMode || false;
+  const themeColors = isDarkMode ? DARK_COLORS : LIGHT_COLORS;
+  
+  const styles = useMemo(() => getStyles(themeColors, isDarkMode), [themeColors, isDarkMode]);
 
   // Ambil daftar node berkamera dari backend (mode jelajah / ganti kamera)
   useEffect(() => {
@@ -83,12 +107,12 @@ const CameraScreen = ({ route, navigation }) => {
   if (!activeNode) {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" />
+        <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} backgroundColor={themeColors.background} />
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             {fromMap && (
               <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-                <Icon name="arrow-back" size={24} color={COLORS.textMain} />
+                <Icon name="arrow-back" size={24} color={themeColors.textMain} />
               </TouchableOpacity>
             )}
             <Text style={styles.headerTitle}>Live Monitoring</Text>
@@ -104,14 +128,14 @@ const CameraScreen = ({ route, navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} backgroundColor={themeColors.background} />
 
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           {fromMap && (
             <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-              <Icon name="arrow-back" size={24} color={COLORS.textMain} />
+              <Icon name="arrow-back" size={24} color={themeColors.textMain} />
             </TouchableOpacity>
           )}
           <View>
@@ -130,7 +154,7 @@ const CameraScreen = ({ route, navigation }) => {
         <View style={styles.videoCard}>
           {isBuffering && !videoError && (
             <View style={styles.loadingOverlay}>
-              <ActivityIndicator size="large" color={COLORS.primary} />
+              <ActivityIndicator size="large" color={themeColors.primary} />
               <Text style={styles.loadingText}>Menghubungkan siaran...</Text>
             </View>
           )}
@@ -168,7 +192,7 @@ const CameraScreen = ({ route, navigation }) => {
           <Text style={styles.statusLabel}>Status Perangkat</Text>
           <View style={styles.statusRow}>
             <View style={styles.statusIndicator}>
-              <View style={[styles.statusDot, { backgroundColor: videoError ? COLORS.danger : '#10B981' }]} />
+              <View style={[styles.statusDot, { backgroundColor: videoError ? themeColors.danger : '#10B981' }]} />
               <Text style={styles.statusValue}>{videoError ? 'Offline' : 'Online'}</Text>
             </View>
             <Text style={styles.latencyText}>Latency: 120ms</Text>
@@ -201,7 +225,8 @@ const CameraScreen = ({ route, navigation }) => {
   );
 };
 
-const styles = StyleSheet.create({
+// Fungsi dinamis untuk membuat Style menyesuaikan Theme Colors
+const getStyles = (COLORS, isDarkMode) => StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   header: {
     paddingHorizontal: 24,
@@ -217,7 +242,7 @@ const styles = StyleSheet.create({
   liveBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.danger + '15',
+    backgroundColor: COLORS.danger + (isDarkMode ? '25' : '15'), // Penyesuaian opasitas mode malam
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
@@ -229,12 +254,12 @@ const styles = StyleSheet.create({
   videoCard: {
     width: '100%',
     height: 240,
-    backgroundColor: '#0F172A',
+    backgroundColor: '#0F172A', // Tetap gelap walau di light mode agar layar video nyaman ditonton
     borderRadius: 24,
     overflow: 'hidden',
-    shadowColor: '#000',
+    shadowColor: COLORS.shadow,
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.2,
+    shadowOpacity: isDarkMode ? 0.4 : 0.15,
     shadowRadius: 20,
     elevation: 10,
   },
@@ -270,6 +295,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
     marginBottom: 16,
+    shadowColor: COLORS.shadow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.02,
+    shadowRadius: 10,
+    elevation: 1,
   },
   statusLabel: {
     fontSize: 13,
@@ -286,10 +316,10 @@ const styles = StyleSheet.create({
   latencyText: { fontSize: 13, color: COLORS.textMuted, fontWeight: '500' },
   descriptionBox: {
     padding: 16,
-    backgroundColor: COLORS.primary + '0A',
+    backgroundColor: COLORS.primary + (isDarkMode ? '15' : '0A'),
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: COLORS.primary + '20',
+    borderColor: COLORS.primary + (isDarkMode ? '30' : '20'),
     marginBottom: 16,
   },
   descriptionTitle: { fontSize: 14, fontWeight: '700', color: COLORS.primary, marginBottom: 4 },
@@ -298,7 +328,7 @@ const styles = StyleSheet.create({
   actionRow: { flexDirection: 'row', gap: 12 },
   secondaryButton: {
     flex: 1,
-    backgroundColor: COLORS.primary + '15',
+    backgroundColor: COLORS.primary + (isDarkMode ? '20' : '15'),
     paddingVertical: 16,
     borderRadius: 16,
     alignItems: 'center',
@@ -312,7 +342,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   refreshButtonFlex: { flex: 1 },
-  refreshButtonText: { color: '#FFF', fontWeight: '700', fontSize: 15 },
+  // Jika dark mode, tombol memiliki bg putih, jadi teks harus diubah jadi gelap (#0F172A) 
+  // Jika light mode, tombol memiliki bg slate-900, jadi teks harus diubah jadi putih (#FFFFFF)
+  refreshButtonText: { color: isDarkMode ? '#0F172A' : '#FFFFFF', fontWeight: '700', fontSize: 15 },
 });
 
 export default CameraScreen;
