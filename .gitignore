@@ -50,6 +50,7 @@ yarn-error.log
 
 # Local config files
 src/config/nodes.js
+src/config/secrets.js
 
 # Firebase / kredensial (jangan di-commit)
 android/app/google-services.json

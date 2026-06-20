@@ -9,6 +9,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { getLocations, getLogs } from '../config/apiClient';
 import { buildNodes } from '../config/nodes';
 import { computeFloodedRoads } from '../config/roads';
+import { GOOGLE_MAPS_API_KEY } from '../config/secrets';
 
 // Mengambil Global State Theme
 import { ThemeContext } from '../context/ThemeContext';
@@ -45,7 +46,7 @@ const FALLBACK_LOCATION = { latitude: -7.2950, longitude: 112.7920 };
 
 // Interval polling AJAX untuk refresh status titik pantau secara live (ms)
 const POLL_INTERVAL = 15000;
-const GOOGLE_DIRECTIONS_KEY = 'AIzaSyAU6Jm-3VtWsL7NtZ8WJoJCPT-xD4HGZvo';
+const GOOGLE_DIRECTIONS_KEY = GOOGLE_MAPS_API_KEY;
 
 // Batasi rekomendasi pencarian hanya di sekitar Surabaya
 const SURABAYA_CENTER = { latitude: -7.2575, longitude: 112.7521 };
