@@ -11,6 +11,9 @@ import { buildNodes } from '../config/nodes';
 // Import Global Theme Context
 import { ThemeContext } from '../context/ThemeContext';
 
+// Visualisasi animasi tinggi sungai
+import RiverLevelVisual from '../components/RiverLevelVisual';
+
 // Palet warna premium (Ultra-Clean Slate & Sky UI) - Light Mode
 const LIGHT_COLORS = {
   background: '#F8FAFC',
@@ -43,7 +46,22 @@ const DARK_COLORS = {
 
 const FALLBACK_REGION = { latitude: -7.2800, longitude: 112.7950 };
 
+// Interval polling AJAX untuk refresh data titik pantau secara live (ms)
 const POLL_INTERVAL = 15000;
+
+// Fungsi untuk menghitung waktu relatif secara dinamis (menggantikan data statis dari DB)
+const getRelativeTime = (timestamp) => {
+  if (!timestamp) return 'Now';
+  const seconds = Math.floor((new Date() - new Date(timestamp)) / 1000);
+  
+  if (seconds < 60) return Math.floor(seconds) + "s";
+  let interval = seconds / 60;
+  if (interval < 60) return Math.floor(interval) + "m";
+  interval = seconds / 3600;
+  if (interval < 24) return Math.floor(interval) + "h";
+  interval = seconds / 86400;
+  return Math.floor(interval) + "d";
+};
 
 const DashboardScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
@@ -74,16 +92,18 @@ const DashboardScreen = ({ navigation }) => {
   // 1. Fetch Data Utama (Sensor Node dari Backend Arthur)
   // silent = true dipakai polling otomatis agar tidak memunculkan loading spinner
   const fetchData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       // Mengambil lokasi dan log terbaru dari API
       const [locations, logs] = await Promise.all([getLocations(), getLogs()]);
-      
+
       // Memproses data mentah menjadi bentuk Node menggunakan fungsi buildNodes
       const processedNodes = buildNodes(locations || [], logs || []);
       setNodes(processedNodes);
     } catch (error) {
       console.error("Gagal menyinkronkan data node:", error);
-      setNodes([]);
+      // Polling silent: pertahankan data lama agar UI tidak berkedip kosong
+      if (!silent) setNodes([]);
     } finally {
       if (!silent) setLoading(false);
     }
@@ -93,11 +113,18 @@ const DashboardScreen = ({ navigation }) => {
   const fetchTweets = useCallback(async () => {
     setLoadingTweets(true);
     try {
-      // UPDATE: URL sekarang mengarah ke Webhook Reader n8n yang membaca dari Database (Bukan Scraper)
-      const response = await axios.get('http://100.112.253.19:5678/webhook/get-live-tweets');
+      // Pastikan IP Tailscale Mac Anda benar di sini
+      // URL diarahkan ke get-stored-tweets agar membaca dari Supabase
+      const response = await axios.get('http://100.71.62.7:5678/webhook/get-live-tweets');
       
       if (response.data && Array.isArray(response.data)) {
-        setTweets(response.data);
+        // Kalkulasi ulang waktu relatif secara dinamis menggunakan tweet_timestamp
+        const dynamicTweets = response.data.map(tweet => ({
+          ...tweet,
+          // Mengabaikan tweet.time bawaan (statis), pakai hasil perhitungan real-time
+          time: tweet.tweet_timestamp ? getRelativeTime(tweet.tweet_timestamp) : tweet.time 
+        }));
+        setTweets(dynamicTweets);
       } else {
         setTweets([]);
       }
@@ -131,6 +158,11 @@ const DashboardScreen = ({ navigation }) => {
   const totalNodes = nodes.length;
   const dangerNodes = nodes.filter(n => n.status.risk === 'BAHAYA' || n.status.risk === 'WASPADA').length;
   const safeNodes = totalNodes - dangerNodes;
+
+  // Node paling kritis (air tertinggi) untuk divisualisasikan — hanya sensor ketinggian, bukan alat kecil biner
+  const featuredNode = nodes
+    .filter(n => !n.isBinary)
+    .reduce((top, n) => (!top || n.status.level_cm > top.status.level_cm ? n : top), null);
 
   if (loading) {
     return (
@@ -269,6 +301,11 @@ const DashboardScreen = ({ navigation }) => {
           </ScrollView>
         )}
 
+        {/* --- SECTION: Visualisasi Tinggi Sungai (Animasi) Arthur --- */}
+        {featuredNode && (
+          <RiverLevelVisual node={featuredNode} themeColors={themeColors} isDarkMode={isDarkMode} />
+        )}
+
         {/* Section: Titik Pantau */}
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, dynamicStyles.textMain]}>Status Titik Pantau</Text>
@@ -310,15 +347,21 @@ const DashboardScreen = ({ navigation }) => {
 
               <View style={[styles.nodeWidgetBottom, { borderTopColor: themeColors.border }]}>
                 <View style={styles.metricArea}>
-                  <Text style={[styles.metricValue, dynamicStyles.textMain]}>{(node.status.level_cm / 100).toFixed(2)}</Text>
-                  <Text style={[styles.metricUnit, dynamicStyles.textMuted]}>Meter</Text>
+                  {node.isBinary ? (
+                    <Text style={[styles.metricValue, { color: node.status.color }]}>{node.status.flood ? 'Banjir' : 'Kering'}</Text>
+                  ) : (
+                    <>
+                      <Text style={[styles.metricValue, dynamicStyles.textMain]}>{(node.status.level_cm / 100).toFixed(2)}</Text>
+                      <Text style={[styles.metricUnit, dynamicStyles.textMuted]}>Meter</Text>
+                    </>
+                  )}
                 </View>
-                
+
                 <View style={styles.hardwareGroup}>
                   {node.hardware.has_sensor && (
                     <View style={[styles.hardwareBadge, dynamicStyles.hardwareBadgeBg]}>
-                      <Icon name="water-outline" size={12} color={themeColors.textMuted} />
-                      <Text style={[styles.hardwareText, dynamicStyles.textMuted]}>Sensor</Text>
+                      <Icon name={node.isBinary ? 'hardware-chip-outline' : 'water-outline'} size={12} color={themeColors.textMuted} />
+                      <Text style={[styles.hardwareText, dynamicStyles.textMuted]}>{node.isBinary ? 'Alat Kecil' : 'Sensor'}</Text>
                     </View>
                   )}
                   {node.hardware.has_camera && (
